@@ -1,0 +1,16 @@
+{
+  "name": "prompt-enhancer-plus-desktop",
+  "version": "1.4.0",
+  "private": true,
+  "description": "A cross-application prompt window sharing the DSH plugin's enhancement core.",
+  "type": "module",
+  "main": "main.mjs",
+  "license": "MIT",
+  "scripts": {
+    "start": "node launch.cjs",
+    "smoke": "node launch.cjs --smoke-test"
+  },
+  "devDependencies": {
+    "electron": "43.8.7"
+  }
+}

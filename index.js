@@ -7,7 +7,12 @@
  * it never enters conversation history and never changes the session log.
  */
 
-export const inject = ['connection', 'llm', 'agents', 'agentDefaultModel'];
+import { PERSONA_DOMAIN, PERSONA_FIELDS, PersonaLibrary } from './personas.js';
+import { enhancementSystem, inputFor, normalizeEnhancedText, resolveFormat, resolveMode } from './prompt-core.js';
+
+export { enhancementSystem };
+
+export const inject = ['connection', 'llm', 'agents', 'agentDefaultModel', 'storageDomain'];
 
 const ROUTE_PATH = '/api/prompt-enhancer-plus/enhance';
 const DEFAULT_OPTIONS = Object.freeze({
@@ -16,58 +21,6 @@ const DEFAULT_OPTIONS = Object.freeze({
   timeoutMs: 90_000,
   systemPrompt: undefined,
 });
-
-const LANGUAGE_RULE = "- Write the entire enhanced prompt in the same language as the user's original request. This is mandatory: Chinese input stays Chinese, English input stays English, and mixed-language input keeps its mix. Never translate or switch languages.";
-
-const MODE_PROMPTS = {
-  general: [
-    'You are an expert prompt engineer working inside an AI coding assistant.',
-    "Rewrite the user's short or vague request into a complete, high-quality prompt that another AI coding assistant can act on.",
-    '',
-    'Rules:',
-    LANGUAGE_RULE,
-    "- Preserve the user's original intent and every concrete fact.",
-    '- Make the request clearer and more actionable by covering, where relevant: goal, context, constraints, expected output, acceptance criteria, and edge cases.',
-    '- Replace vague wording with concrete requirements. If important information is missing, add a short "Assumptions" section instead of inventing hidden facts.',
-    '- Keep the result proportional to the original request; do not invent extra features or requirements.',
-    '- If the input is already detailed, polish it rather than padding it.',
-    '- Return only the enhanced prompt text. No preamble, no explanation, no quotation marks, no Markdown code fences.',
-  ],
-  system: [
-    'You are an expert prompt engineer who writes system instructions for AI assistants.',
-    "Rewrite the user's draft as a precise, self-contained system prompt for an AI coding assistant.",
-    '',
-    'Rules:',
-    LANGUAGE_RULE,
-    '- State the role, responsibilities, constraints, and output expectations clearly.',
-    '- Make the instructions directly usable as a system prompt; avoid meta commentary about the rewrite.',
-    '- Preserve every concrete fact and constraint from the original draft.',
-    '- Keep the result proportional to the original request; do not invent unrelated policies.',
-    '- Return only the enhanced system prompt. No preamble, no quotation marks, no Markdown code fences.',
-  ],
-  task: [
-    'You are an expert prompt engineer who turns loose ideas into complete task briefs.',
-    "Rewrite the user's draft as a task brief for an AI coding assistant.",
-    '',
-    'Rules:',
-    LANGUAGE_RULE,
-    '- Cover, where relevant: goal, context, requirements, constraints, expected output, acceptance criteria, and edge cases.',
-    '- Make ambiguous requirements concrete; if information is missing, add a short "Assumptions" section rather than inventing hidden facts.',
-    '- Keep the result proportional to the original request; do not add unrelated features.',
-    '- Return only the enhanced task brief. No preamble, no quotation marks, no Markdown code fences.',
-  ],
-  concise: [
-    'You are an expert prompt editor.',
-    "Tighten and clarify the user's draft without making it longer than necessary.",
-    '',
-    'Rules:',
-    LANGUAGE_RULE,
-    '- Remove repetition, filler, and ambiguity while keeping every concrete fact and requirement.',
-    '- Prefer direct, actionable wording over explanations.',
-    '- If the original is already clear, make only small improvements.',
-    '- Return only the improved prompt. No preamble, no quotation marks, no Markdown code fences.',
-  ],
-};
 
 function jsonResponse(status, value) {
   return new Response(JSON.stringify(value), {
@@ -107,10 +60,6 @@ function resolveOptions(config) {
   };
 }
 
-function resolveMode(mode) {
-  return Object.prototype.hasOwnProperty.call(MODE_PROMPTS, mode) ? mode : 'general';
-}
-
 function resolveRoute(ctx, sessionId) {
   const agent = sessionId === undefined ? undefined : ctx.agents.get(sessionId);
   const selectedRoute = agent?.model?.current?.();
@@ -132,26 +81,6 @@ function resolveRoute(ctx, sessionId) {
   return undefined;
 }
 
-function inputFor(text) {
-  return `Original request from the user:\n"""\n${text}\n"""\n\nWrite the enhanced prompt now.`;
-}
-
-function stripWrapping(text) {
-  let value = text.trim();
-  const fence = /^```(?:[a-zA-Z0-9_-]+)?\r?\n([\s\S]*?)\r?\n```$/u.exec(value);
-  if (fence !== null && typeof fence[1] === 'string') value = fence[1].trim();
-  if (
-    value.length >= 2
-    && (
-      (value.startsWith('"') && value.endsWith('"'))
-      || (value.startsWith('“') && value.endsWith('”'))
-    )
-  ) {
-    value = value.slice(1, -1).trim();
-  }
-  return value;
-}
-
 /**
  * Run one prompt-enhancement model call with metadata.
  * @param {object} ctx - Host context with agents, llm, and agentDefaultModel.
@@ -160,10 +89,12 @@ function stripWrapping(text) {
  * @param {AbortSignal} signal - caller cancellation.
  * @param {object} options - resolved plugin options.
  * @param {string} mode - prompt mode: general, system, task, or concise.
- * @returns {Promise<{enhanced: string, mode: string, usage: object | null, elapsedMs: number, model: object}>}
+ * @returns {Promise<{enhanced: string, mode: string, format: string, usage: object | null, elapsedMs: number, model: object, persona: object | null}>}
  */
-export async function enhancePromptDetailed(ctx, text, sessionId, signal, options = DEFAULT_OPTIONS, mode = 'general') {
+export async function enhancePromptDetailed(ctx, text, sessionId, signal, options = DEFAULT_OPTIONS, mode = 'general', persona, format = 'plain') {
   const resolvedMode = resolveMode(mode);
+  const resolvedFormat = resolveFormat(format);
+  const personaSnapshot = persona === undefined ? undefined : structuredClone(persona);
   const route = resolveRoute(ctx, sessionId);
   if (route === undefined) {
     throw codedError('no-route', 'No model route is available. Choose a model in the composer first.');
@@ -183,10 +114,8 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
     role: 'user',
     content: [{ type: 'text', text: inputFor(text) }],
   }];
-  const customPrompt = options.systemPrompt;
-  const system = customPrompt === undefined
-    ? MODE_PROMPTS[resolvedMode].join('\n')
-    : `${LANGUAGE_RULE}\n\n${customPrompt}`;
+  const system = enhancementSystem({ ...options, format: resolvedFormat }, resolvedMode, personaSnapshot);
+  callSignal.throwIfAborted();
   let output = '';
   let blockText = '';
   let usage = null;
@@ -200,6 +129,7 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
     signal: callSignal,
   });
   for await (const chunk of stream) {
+    callSignal.throwIfAborted();
     if (chunk.type === 'text-delta') {
       output += chunk.text;
     } else if (chunk.type === 'block-end' && chunk.block?.type === 'text') {
@@ -210,22 +140,28 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
       finish = chunk.reason;
     }
   }
+  callSignal.throwIfAborted();
+  if (finish?.kind === 'max-tokens') throw codedError('output-truncated', 'The result reached the output token limit. Increase the limit or shorten the request.');
+  if (finish?.kind === 'tool-calls') throw codedError('invalid-output', 'A rewritten prompt must contain text only.');
+  if (finish === undefined) throw codedError('incomplete-output', 'The model stream ended without a completion status.');
   if (finish?.kind === 'error') {
     throw codedError('model-failed', finish.failure?.message ?? 'The model call failed.');
   }
   if (finish?.kind === 'aborted') {
     throw codedError('aborted', 'The model call was cancelled.');
   }
-  const enhanced = stripWrapping(output || blockText);
+  const enhanced = normalizeEnhancedText(output || blockText, { format: resolvedFormat, original: text });
   if (enhanced.length === 0) {
     throw codedError('empty-output', 'The model returned no text.');
   }
   return {
     enhanced,
     mode: resolvedMode,
+    format: resolvedFormat,
     usage: usage ?? null,
     elapsedMs: Date.now() - startedAt,
     model: { provider: route.provider, model: route.model },
+    persona: personaSnapshot ?? null,
   };
 }
 
@@ -239,7 +175,7 @@ export async function enhancePrompt(ctx, text, sessionId, signal, options = DEFA
   return result.enhanced;
 }
 
-async function handleEnhance(ctx, request, options) {
+async function handleEnhance(service, request) {
   if (request.method !== 'POST') {
     return jsonResponse(405, { error: { code: 'method', message: 'Method not allowed.' } });
   }
@@ -253,11 +189,11 @@ async function handleEnhance(ctx, request, options) {
   if (text.length === 0) {
     return jsonResponse(400, { error: { code: 'empty-input', message: 'Enter some text to enhance first.' } });
   }
-  if (text.length > options.maxInputChars) {
+  if (text.length > service.options.maxInputChars) {
     return jsonResponse(400, {
       error: {
         code: 'too-long',
-        message: `The draft is ${text.length} characters; the limit is ${options.maxInputChars}.`,
+        message: `The draft is ${text.length} characters; the limit is ${service.options.maxInputChars}.`,
       },
     });
   }
@@ -265,13 +201,14 @@ async function handleEnhance(ctx, request, options) {
     ? payload.sessionId
     : undefined;
   const mode = resolveMode(typeof payload?.mode === 'string' ? payload.mode : 'general');
+  const format = resolveFormat(payload?.format);
   try {
-    const result = await enhancePromptDetailed(ctx, text, sessionId, request.signal, options, mode);
+    const result = await service.enhance({ text, sessionId, mode, format, personaId: payload?.personaId }, request.signal);
     return jsonResponse(200, result);
   } catch (error) {
     return jsonResponse(502, {
       error: {
-        code: typeof error?.code === 'string' ? error.code : 'model-failed',
+        code: error?.name === 'TimeoutError' ? 'TimeoutError' : typeof error?.code === 'string' ? error.code : 'model-failed',
         message: errorMessage(error),
       },
     });
@@ -283,12 +220,95 @@ async function handleEnhance(ctx, request, options) {
  * @param {object} ctx - Host plugin context.
  * @param {object} config - optional row config: maxInputChars, maxOutputTokens, timeoutMs, systemPrompt.
  */
-export function apply(ctx, config) {
+export class PromptEnhancerService {
+  constructor(ctx, options, library) {
+    this.ctx = ctx;
+    this.options = options;
+    this.library = library;
+  }
+
+  async enhance(request, signal) {
+    const text = typeof request.text === 'string' ? request.text.trim() : '';
+    if (!text) throw codedError('empty-input', 'Enter some text to enhance first.');
+    if (text.length > this.options.maxInputChars) throw codedError('too-long', 'The draft exceeds the configured character limit.');
+    if (request.personaId !== undefined && request.personaId !== null && typeof request.personaId !== 'string') {
+      throw codedError('invalid-persona', 'Choose a persona id.');
+    }
+    const persona = this.library.resolve(request.personaId);
+    return enhancePromptDetailed(this.ctx, text, request.sessionId, signal, this.options, request.mode, persona, request.format);
+  }
+
+  perform(request, signal) {
+    return request?.action === 'enhance' ? this.enhance(request, signal) : this.library.act(request);
+  }
+}
+
+export function enhancerTool(service) {
+  return {
+    name: 'prompt_enhancer',
+    deferLoading: true,
+    description: 'Enhance prompt text or manage reusable enhancement personas in this DSH profile. Does not send messages or change the composer.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['list', 'save', 'select', 'delete', 'enhance'] },
+        expectedRevision: { type: 'integer', description: 'For save/select/delete, use the revision from list.' },
+        id: { type: 'string', description: 'Persona id from list for select/delete.' },
+        persona: {
+          type: 'object',
+          description: 'For save: a reusable direction, never the task or generated result. Omit id to create; include a custom id to edit.',
+          properties: Object.fromEntries(['id', 'name', ...PERSONA_FIELDS].map((field) => [field, { type: 'string' }])),
+          required: ['name'],
+          additionalProperties: false,
+        },
+        select: { type: 'boolean', description: 'Save and also make this persona the profile default.' },
+        text: { type: 'string', description: 'Draft to enhance; required for enhance. This calls the configured model and uses tokens.' },
+        mode: { type: 'string', enum: ['general', 'system', 'task', 'concise'] },
+        format: { type: 'string', enum: ['plain', 'markdown'], description: 'For enhance: plain text by default; optionally Markdown.' },
+        personaId: { type: 'string', description: 'For enhance: omit to use the profile default; empty string uses no persona.' },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+    },
+    async execute(args, exec) {
+      return service.perform({ ...args, sessionId: exec.agent?.id }, exec.signal);
+    },
+  };
+}
+
+export async function apply(ctx, config) {
   const options = resolveOptions(config);
+  const domain = await ctx.storageDomain.open(PERSONA_DOMAIN);
+  ctx.effect(() => () => domain.close(), 'prompt-enhancer-plus: persona storage');
+  const service = new PromptEnhancerService(ctx, options, new PersonaLibrary(domain.global));
+  const lifetime = new AbortController();
+  ctx.effect(() => () => lifetime.abort(), 'prompt-enhancer-plus: pending requests');
   ctx.effect(() => ctx.connection.fetch.register({
     path: ROUTE_PATH,
     methods: ['POST'],
     requestBody: 'buffered',
-    fetch: (request) => handleEnhance(ctx, request, options),
+    fetch: (request) => handleEnhance(service, new Request(request, {
+      signal: AbortSignal.any([request.signal, lifetime.signal]),
+    })),
   }), 'prompt-enhancer-plus: LLM route');
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/prompt-enhancer-plus/personas',
+    methods: ['GET', 'POST'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      try {
+        const action = request.method === 'GET' ? { action: 'list' } : await request.json();
+        return jsonResponse(200, await service.library.act(action));
+      } catch (error) {
+        const code = error?.code ?? 'persona-storage-failed';
+        return jsonResponse(code === 'persona-conflict' ? 409 : 400, { error: { code, message: errorMessage(error) } });
+      }
+    },
+  }), 'prompt-enhancer-plus: persona library route');
+  const tools = ctx.get('tools');
+  if (tools !== undefined) ctx.effect(() => tools.register(enhancerTool(service)), 'prompt-enhancer-plus: agent operations');
 }

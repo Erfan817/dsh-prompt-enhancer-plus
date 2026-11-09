@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>提示词强化 Plus</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="renderer.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">✧</span><div><h1>提示词助手</h1><p>把想法说清楚，去任何 Agent 里使用</p></div></div>
+    <nav aria-label="窗口操作">
+      <button id="pin" class="quiet" aria-pressed="false">置顶</button>
+      <button id="fullscreen" class="quiet">全屏</button>
+      <button id="settings" class="quiet">设置</button>
+      <button id="quit" class="quiet">退出</button>
+    </nav>
+  </header>
+  <main id="workspace" class="workspace">
+    <div class="document">
+      <p id="connectionHint" class="connection-hint"></p>
+      <details id="draftPanel" class="draft-panel" open>
+        <summary><span>你的想法</span><span id="draftSummary" class="summary-text">不必写得很完整，保留你真正想做的事就好</span></summary>
+        <label class="visually-hidden" for="draft">原始提示词</label>
+        <textarea id="draft" class="text-editor draft-editor" rows="5" maxlength="12000" placeholder="例如：帮我改进这个插件的界面，让强化后的提示词能舒服地完整阅读，也能在其他 AI 桌面软件使用。" spellcheck="false"></textarea>
+      </details>
+      <div class="options" aria-label="强化选项">
+        <label>方式<select id="mode"><option value="general">通用强化</option><option value="concise">简洁润色</option><option value="task">任务描述</option><option value="system">系统提示词</option></select></label>
+        <label>方向<select id="persona"></select></label>
+        <label>格式<select id="format"><option value="plain">自然纯文本</option><option value="markdown">Markdown</option></select></label>
+      </div>
+      <div id="customDirection" hidden>
+        <label class="field" for="direction">希望怎么强化<textarea id="direction" rows="3" maxlength="4000" placeholder="例如：保持口语自然，只补充必要边界，不添加小标题。"></textarea></label>
+        <p class="help">可在设置中保存这个方向；不会把本次任务或结果保存为方向。</p>
+      </div>
+      <section id="resultSection" class="result-section" hidden aria-labelledby="resultTitle">
+        <div class="section-heading"><h2 id="resultTitle">更清楚的表达</h2><span id="editableHint" class="help">可直接编辑，复制的是你看到的文字</span></div>
+        <label class="visually-hidden" for="result">强化后的提示词</label>
+        <textarea id="result" class="text-editor result-editor" rows="1" spellcheck="false"></textarea>
+        <details class="result-details"><summary>本次调用</summary><p id="metadata" class="help"></p></details>
+      </section>
+      <div id="emptyState" class="empty-state"><span aria-hidden="true">✧</span><p>不堆砌模板，不擅自扩大任务。</p><p class="help">默认用自然段表达，保留原语言与具体事实。</p></div>
+    </div>
+  </main>
+  <footer class="app-footer">
+    <div class="status-area"><p id="status" role="status" aria-live="polite"></p><span id="shortcutHint" class="help"></span></div>
+    <div class="footer-actions"><button id="cancel" class="quiet" hidden>取消生成</button><button id="copy" class="secondary" disabled>复制全文</button><button id="generate" class="primary">强化提示词</button></div>
+  </footer>
+  <dialog id="settingsDialog" aria-labelledby="settingsTitle">
+    <form id="settingsForm">
+      <div class="dialog-header"><h2 id="settingsTitle">模型与偏好</h2><button id="closeSettings" type="button" class="quiet" aria-label="关闭设置">关闭</button></div>
+      <p class="help">这是独立助手。不会读取 Claude、Codex 或 DSH 的登录与密钥。生成会发送原文和强化方向给你配置的模型 API，并产生相应费用。</p>
+      <label class="field" for="provider">接口类型<select id="provider"><option value="openai">OpenAI 兼容（DeepSeek / OpenAI / 本地模型）</option><option value="anthropic">Anthropic Messages API</option></select></label>
+      <label class="field" for="baseUrl">API 基础地址<input id="baseUrl" type="url" required maxlength="2048" placeholder="https://api.deepseek.com"></label>
+      <label class="field" for="model">模型 ID<input id="model" required maxlength="200" placeholder="deepseek-chat"></label>
+      <label class="field" for="apiKey">API Key<input id="apiKey" type="password" maxlength="8192" autocomplete="off" placeholder="留空保留现有 Key；本地无鉴权模型可不填"></label>
+      <label class="check"><input id="rememberKey" type="checkbox"> 使用系统安全存储记住 Key</label>
+      <label class="check"><input id="forgetKey" type="checkbox"> 清除当前保存及内存中的 Key</label>
+      <p id="keyHint" class="help"></p>
+      <p class="help">切换 API 地址或接口类型后，请重新输入该服务的 Key，避免把旧 Key 发给新服务。本地模型支持 localhost HTTP，远程地址必须 HTTPS。</p>
+      <label class="field" for="savedDirection">我的自定义强化方向<textarea id="savedDirection" rows="3" maxlength="4000"></textarea></label>
+      <p id="runtimeHint" class="help">只保存模型配置和你明确填写的强化方向，不保存任务历史。默认快捷键 Ctrl / Cmd + Shift + Space；关闭窗口后仍可唤出，真正退出请点“退出”。</p>
+      <p id="settingsStatus" class="message" role="status" aria-live="polite"></p>
+      <div class="dialog-actions"><button id="saveSettings" type="submit" class="primary">保存设置</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

@@ -1,7 +1,7 @@
 {
   "name": "dsh-prompt-enhancer-plus",
-  "version": "1.2.1",
-  "description": "Adds an Enhance prompt button beside the composer permission control, with preview, four modes, usage metadata, recent history, and undo, preserving the input language.",
+  "version": "1.4.0",
+  "description": "Natural plain-text prompt enhancement with editable full-text previews, reusable personas and a cross-application desktop companion.",
   "type": "module",
   "main": "index.js",
   "license": "MIT",
@@ -28,18 +28,42 @@
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./core": "./prompt-core.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
   "files": [
     "index.js",
     "client.js",
+    "personas.js",
+    "prompt-core.js",
+    "test-*.mjs",
+    "desktop/*.mjs",
+    "desktop/*.cjs",
+    "desktop/*.js",
+    "desktop/*.html",
+    "desktop/*.css",
+    "desktop/package.json",
+    "desktop/package-lock.json",
+    "启动通用窗口.cmd",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
     "README.md",
+    "README.zh.md",
     "LICENSE"
   ],
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "scripts": {
+    "test": "node test-core.mjs && node test-host.mjs && node test-personas.mjs && node test-client.mjs && node desktop/test-desktop.mjs && node desktop/test-server.mjs",
+    "desktop": "node desktop/local.mjs",
+    "desktop:smoke": "node desktop/local.mjs --smoke-test",
+    "desktop:electron": "npm --prefix desktop start",
+    "desktop:setup": "npm --prefix desktop install",
+    "desktop:electron:smoke": "npm --prefix desktop run smoke"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
