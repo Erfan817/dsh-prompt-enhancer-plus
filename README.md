@@ -22,7 +22,7 @@ For a DSH Web profile:
 dsh plugin --profile web add github:Erfan817/dsh-prompt-enhancer-plus
 ```
 
-The GitHub release also carries a packaged tarball under the `v1.2.0` tag.
+The GitHub release also carries a packaged tarball under the `v1.2.1` tag.
 
 ## Configuration
 

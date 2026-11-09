@@ -188,7 +188,7 @@ window.__ModuleLoader__.load({
         signal,
         isCurrentDraft,
       } = options;
-      store.update({ status: 'busy', mode, error: '' });
+      store.update({ status: 'busy', mode, error: '', undo: null });
       const startedAt = Date.now();
       try {
         const response = await fetch('/api/prompt-enhancer-plus/enhance', {

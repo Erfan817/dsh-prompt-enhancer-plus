@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-enhancer-plus",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Adds an Enhance prompt button beside the composer permission control, with preview, four modes, usage metadata, recent history, and undo, preserving the input language.",
   "type": "module",
   "main": "index.js",
