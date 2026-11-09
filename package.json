@@ -1,0 +1,56 @@
+{
+  "name": "dsh-prompt-enhancer-plus",
+  "version": "1.0.0",
+  "description": "Adds an Enhance prompt button beside the composer permission control that rewrites a short draft into a clear, detailed prompt in the same language.",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "author": "Erfan817",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Erfan817/dsh-prompt-enhancer-plus.git"
+  },
+  "homepage": "https://github.com/Erfan817/dsh-prompt-enhancer-plus#readme",
+  "bugs": {
+    "url": "https://github.com/Erfan817/dsh-prompt-enhancer-plus/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "prompt",
+    "prompt-enhancer",
+    "composer"
+  ],
+  "engines": {
+    "dsh": ">=0.2.2-rc.1"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

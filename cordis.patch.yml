@@ -1,0 +1,5 @@
+# Prompt enhancer plus bundle: one Host row owns the authenticated LLM route;
+# the Client half renders the button in the composer tool row.
+- insert:
+    - id: prompt-enhancer-plus
+      name: 'dsh-prompt-enhancer-plus'
