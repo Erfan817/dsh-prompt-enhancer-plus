@@ -16,6 +16,8 @@ window.__ModuleLoader__.load({
       emptyResult: 'The model returned no text.',
       changed: 'The draft changed while enhancing, so the result was not applied.',
       failed: 'Enhancement failed. Please try again.',
+      undo: 'Undo',
+      undoHint: 'Restore the draft from before this enhancement',
     };
     const ZH = {
       button: '强化提示词',
@@ -28,6 +30,8 @@ window.__ModuleLoader__.load({
       emptyResult: '模型没有返回内容',
       changed: '强化期间输入已修改，未替换结果',
       failed: '强化失败，请稍后重试',
+      undo: '撤销',
+      undoHint: '恢复强化前的输入',
     };
 
     function SparkleIcon() {
@@ -50,6 +54,7 @@ window.__ModuleLoader__.load({
       const draft = useInput((state) => state.draft);
       const [status, setStatus] = React.useState('idle');
       const [error, setError] = React.useState('');
+      const [undo, setUndo] = React.useState(null);
       const abortRef = React.useRef(null);
       const draftRef = React.useRef(draft);
       React.useEffect(() => {
@@ -66,6 +71,11 @@ window.__ModuleLoader__.load({
         }, status === 'done' ? 2200 : 6000);
         return () => window.clearTimeout(timer);
       }, [status]);
+      React.useEffect(() => {
+        if (undo === null) return undefined;
+        const timer = window.setTimeout(() => setUndo(null), 10000);
+        return () => window.clearTimeout(timer);
+      }, [undo]);
       const text = typeof draft === 'string' ? draft.trim() : '';
       const disabled = status === 'busy' || text.length === 0 || inputActions === undefined;
 
@@ -76,6 +86,7 @@ window.__ModuleLoader__.load({
         abortRef.current = controller;
         setStatus('busy');
         setError('');
+        setUndo(null);
         const originalDraft = draft;
         try {
           const response = await fetch('/api/prompt-enhancer-plus/enhance', {
@@ -105,7 +116,9 @@ window.__ModuleLoader__.load({
             setError(t('changed'));
             return;
           }
-          inputActions.setDraft(enhanced.trim());
+          const applied = enhanced.trim();
+          inputActions.setDraft(applied);
+          setUndo({ original: originalDraft, applied });
           setStatus('done');
         } catch (error) {
           if (error?.name === 'AbortError') return;
@@ -117,6 +130,14 @@ window.__ModuleLoader__.load({
       }, [draft, inputActions, sessionId, status, t, text]);
 
       const label = status === 'busy' ? t('busy') : status === 'done' ? t('doneShort') : t('button');
+      const canUndo = undo !== null && typeof draft === 'string' && draft.trim() === undo.applied;
+      const undoDraft = () => {
+        if (undo === null) return;
+        inputActions.setDraft(undo.original);
+        setUndo(null);
+        setStatus('idle');
+        setError('');
+      };
       return h('div', { className: 'pe-root' },
         h('button', {
           type: 'button',
@@ -130,6 +151,14 @@ window.__ModuleLoader__.load({
         },
         h('span', { className: 'pe-icon', 'aria-hidden': true }, h(SparkleIcon)),
         h('span', null, label)),
+        canUndo
+          ? h('button', {
+            type: 'button',
+            className: 'pe-undo',
+            title: t('undoHint'),
+            onClick: undoDraft,
+          }, t('undo'))
+          : null,
         status === 'error' && error
           ? h('span', {
             className: 'pe-error-text',
@@ -146,6 +175,9 @@ window.__ModuleLoader__.load({
 .pe-button:disabled{opacity:.42;cursor:default;}
 .pe-button.pe-done{color:var(--dsw-alias-state-success-primary);}
 .pe-button.pe-error{color:var(--dsw-alias-state-error-primary);}
+.pe-undo{height:24px;padding:0 4px;border:none;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:1;cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
+.pe-undo:hover{color:var(--dsw-alias-label-primary);}
+.pe-undo:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;}
 .pe-icon{display:inline-flex;width:13px;height:13px;align-items:center;justify-content:center;}
 .pe-icon svg{width:13px;height:13px;display:block;}
 .pe-error-text{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-state-error-primary);font-size:12px;}

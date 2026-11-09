@@ -4,6 +4,7 @@ Adds a **✨ Enhance prompt** button to the DSH composer tool row, right after t
 
 - Works with the current session's model; no separate API key is needed.
 - Keeps the original language: Chinese input stays Chinese, English stays English, mixed input keeps its mix.
+- **Undo is built in:** after a replacement the original draft is kept for 10 seconds and can be restored with one click; if you edit the draft while the request is running, the result is not applied.
 - Never sends anything by itself — you still review and submit the draft.
 - Button is disabled for an empty draft and reports failures inline.
 - Localized in English and Simplified Chinese.
