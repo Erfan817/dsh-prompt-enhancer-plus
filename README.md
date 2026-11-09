@@ -1,8 +1,10 @@
-# dsh-prompt-enhancer-plus
+# Prompt Spark
 
 English · [中文](README.zh.md)
 
 **Version 1.4.0 source.** GitHub Releases and npm are published separately; the source version alone does not imply a new packaged release.
+
+The project is now named **Prompt Spark**. Its DSH/npm package identifier remains `dsh-prompt-enhancer-plus` for compatibility with existing installations.
 
 One enhancement core, two entry points: improve drafts inside DeepSeek Harness, or use a standalone desktop window and paste its results into Claude, Codex, or another AI application. Nothing sends a chat message automatically.
 

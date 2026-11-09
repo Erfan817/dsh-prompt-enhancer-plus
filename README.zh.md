@@ -1,8 +1,10 @@
-# 提示词强化 Plus
+# Prompt Spark · 提示词火花
 
 [English](README.md) · 中文
 
 当前源码版本：**1.4.0**。GitHub Release 和 npm 独立发布，源码更新不代表已发布新的安装包版本。
+
+项目现已更名为 **Prompt Spark（提示词火花）**。为兼容已有安装，DSH 插件及 npm 包标识仍保留 `dsh-prompt-enhancer-plus`。
 
 一个增强核心，两种入口：在 DeepSeek Harness 中直接强化草稿，或用独立桌面窗口生成提示词，再复制到 Claude、Codex 及其他 AI 软件。不会自动发送消息。
 

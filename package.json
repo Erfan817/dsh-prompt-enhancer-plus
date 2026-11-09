@@ -8,11 +8,11 @@
   "author": "Erfan817",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Erfan817/dsh-prompt-enhancer-plus.git"
+    "url": "git+https://github.com/Erfan817/prompt-spark.git"
   },
-  "homepage": "https://github.com/Erfan817/dsh-prompt-enhancer-plus#readme",
+  "homepage": "https://github.com/Erfan817/prompt-spark#readme",
   "bugs": {
-    "url": "https://github.com/Erfan817/dsh-prompt-enhancer-plus/issues"
+    "url": "https://github.com/Erfan817/prompt-spark/issues"
   },
   "keywords": [
     "dsh",
