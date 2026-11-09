@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Prompt enhancer plus",
-    "description": "Adds an Enhance prompt button beside the composer permission control that expands a short draft into a clear, detailed prompt in the same language."
+    "description": "Adds an Enhance prompt button beside the composer permission control, with a preview, four modes, usage metadata, recent history, and undo."
   }
 }

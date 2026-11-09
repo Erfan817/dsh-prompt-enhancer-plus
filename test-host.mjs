@@ -1,10 +1,11 @@
-import { apply, enhancePrompt } from './index.js';
+import { apply, enhancePrompt, enhancePromptDetailed } from './index.js';
 
 function makeCtx(options = {}) {
   const routes = [];
   const chunks = options.chunks ?? [
     { type: 'text-delta', text: '请实现一个插件：' },
     { type: 'text-delta', text: '在输入框下方添加“强化提示词”按钮。' },
+    { type: 'usage', usage: { inputTokens: 12, outputTokens: 20, totalTokens: 32 } },
     { type: 'finish', reason: { kind: 'stop' } },
   ];
   const ctx = {
@@ -47,7 +48,7 @@ function makeCtx(options = {}) {
 }
 
 async function callRoute(route, body) {
-  const response = await route.fetch(new Request('http://local/api/prompt-enhancer/enhance', {
+  const response = await route.fetch(new Request('http://local/api/prompt-enhancer-plus/enhance', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -60,15 +61,24 @@ apply(ctx);
 if (routes.length !== 1) throw new Error(`expected one route, got ${routes.length}`);
 if (routes[0].path !== '/api/prompt-enhancer-plus/enhance') throw new Error('wrong route path');
 
-const success = await callRoute(routes[0], { text: '做一个插件', sessionId: 'session-1' });
+const success = await callRoute(routes[0], { text: '做一个插件', sessionId: 'session-1', mode: 'system' });
 if (success.status !== 200 || typeof success.body.enhanced !== 'string' || success.body.enhanced.length === 0) {
   throw new Error(`success case failed: ${JSON.stringify(success)}`);
 }
-console.log('success:', success.body.enhanced);
+if (success.body.mode !== 'system') throw new Error('mode was not returned');
+if (success.body.usage?.totalTokens !== 32) throw new Error('usage was not returned');
+if (typeof success.body.elapsedMs !== 'number') throw new Error('elapsedMs was not returned');
+console.log('success:', success.body.enhanced, '| mode:', success.body.mode, '| tokens:', success.body.usage.totalTokens);
 
 const empty = await callRoute(routes[0], { text: '   ' });
 if (empty.status !== 400 || empty.body.error.code !== 'empty-input') throw new Error(`empty case failed: ${JSON.stringify(empty)}`);
 console.log('empty input ->', empty.status, empty.body.error.code);
+
+const limitedCtx = makeCtx();
+apply(limitedCtx.ctx, { maxInputChars: 4 });
+const tooLong = await callRoute(limitedCtx.routes[0], { text: '12345' });
+if (tooLong.status !== 400 || tooLong.body.error.code !== 'too-long') throw new Error(`limit case failed: ${JSON.stringify(tooLong)}`);
+console.log('configured limit ->', tooLong.status, tooLong.body.error.code);
 
 const noRouteCtx = makeCtx({ route: {} });
 const noRoute = await enhancePrompt(noRouteCtx.ctx, 'hello', undefined, undefined).catch((error) => error);
@@ -91,5 +101,11 @@ const fencedCtx = makeCtx({
 const fenced = await enhancePrompt(fencedCtx.ctx, 'hello', undefined, undefined);
 if (fenced !== 'A better prompt') throw new Error(`fence stripping failed: ${JSON.stringify(fenced)}`);
 console.log('fence stripping ->', JSON.stringify(fenced));
+
+const detailed = await enhancePromptDetailed(ctx, 'hello', undefined, undefined, { maxOutputTokens: 3000, timeoutMs: 90000 }, 'concise');
+if (detailed.mode !== 'concise' || detailed.enhanced.length === 0 || detailed.usage === null) {
+  throw new Error(`detailed result failed: ${JSON.stringify(detailed)}`);
+}
+console.log('detailed result ->', detailed.mode, detailed.usage.totalTokens, detailed.model.model);
 
 console.log('host tests passed');

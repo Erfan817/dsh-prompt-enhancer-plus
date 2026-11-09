@@ -1,32 +1,73 @@
 /**
- * Host half of the prompt-enhancer bundle.
+ * Host half of the prompt-enhancer-plus bundle.
  *
  * The browser button calls an authenticated exact Fetch route on `/api`.
  * That route runs one auxiliary LLM request on the current session's model
- * route and returns the rewritten prompt; it never enters conversation
- * history and never changes the session log.
+ * route and returns the rewritten prompt plus lightweight usage metadata;
+ * it never enters conversation history and never changes the session log.
  */
 
 export const inject = ['connection', 'llm', 'agents', 'agentDefaultModel'];
 
 const ROUTE_PATH = '/api/prompt-enhancer-plus/enhance';
-const MAX_INPUT_CHARS = 12000;
-const MAX_OUTPUT_TOKENS = 3000;
-const TIMEOUT_MS = 90_000;
+const DEFAULT_OPTIONS = Object.freeze({
+  maxInputChars: 12000,
+  maxOutputTokens: 3000,
+  timeoutMs: 90_000,
+  systemPrompt: undefined,
+});
 
-const SYSTEM_PROMPT = [
-  'You are an expert prompt engineer working inside an AI coding assistant.',
-  "Rewrite the user's short or vague request into a complete, high-quality prompt that another AI coding assistant can act on.",
-  '',
-  'Rules:',
-  "- Write the entire enhanced prompt in the same language as the user's original request. This is mandatory: Chinese input stays Chinese, English input stays English, and mixed-language input keeps its mix. Never translate or switch languages.",
-  "- Preserve the user's original intent and every concrete fact.",
-  '- Make the request clearer and more actionable by covering, where relevant: goal, context, constraints, expected output, acceptance criteria, and edge cases.',
-  '- Replace vague wording with concrete requirements. If important information is missing, add a short "Assumptions" section instead of inventing hidden facts.',
-  '- Keep the result proportional to the original request; do not invent extra features or requirements.',
-  '- If the input is already detailed, polish it rather than padding it.',
-  '- Return only the enhanced prompt text. No preamble, no explanation, no quotation marks, no Markdown code fences.',
-].join('\n');
+const LANGUAGE_RULE = "- Write the entire enhanced prompt in the same language as the user's original request. This is mandatory: Chinese input stays Chinese, English input stays English, and mixed-language input keeps its mix. Never translate or switch languages.";
+
+const MODE_PROMPTS = {
+  general: [
+    'You are an expert prompt engineer working inside an AI coding assistant.',
+    "Rewrite the user's short or vague request into a complete, high-quality prompt that another AI coding assistant can act on.",
+    '',
+    'Rules:',
+    LANGUAGE_RULE,
+    "- Preserve the user's original intent and every concrete fact.",
+    '- Make the request clearer and more actionable by covering, where relevant: goal, context, constraints, expected output, acceptance criteria, and edge cases.',
+    '- Replace vague wording with concrete requirements. If important information is missing, add a short "Assumptions" section instead of inventing hidden facts.',
+    '- Keep the result proportional to the original request; do not invent extra features or requirements.',
+    '- If the input is already detailed, polish it rather than padding it.',
+    '- Return only the enhanced prompt text. No preamble, no explanation, no quotation marks, no Markdown code fences.',
+  ],
+  system: [
+    'You are an expert prompt engineer who writes system instructions for AI assistants.',
+    "Rewrite the user's draft as a precise, self-contained system prompt for an AI coding assistant.",
+    '',
+    'Rules:',
+    LANGUAGE_RULE,
+    '- State the role, responsibilities, constraints, and output expectations clearly.',
+    '- Make the instructions directly usable as a system prompt; avoid meta commentary about the rewrite.',
+    '- Preserve every concrete fact and constraint from the original draft.',
+    '- Keep the result proportional to the original request; do not invent unrelated policies.',
+    '- Return only the enhanced system prompt. No preamble, no quotation marks, no Markdown code fences.',
+  ],
+  task: [
+    'You are an expert prompt engineer who turns loose ideas into complete task briefs.',
+    "Rewrite the user's draft as a task brief for an AI coding assistant.",
+    '',
+    'Rules:',
+    LANGUAGE_RULE,
+    '- Cover, where relevant: goal, context, requirements, constraints, expected output, acceptance criteria, and edge cases.',
+    '- Make ambiguous requirements concrete; if information is missing, add a short "Assumptions" section rather than inventing hidden facts.',
+    '- Keep the result proportional to the original request; do not add unrelated features.',
+    '- Return only the enhanced task brief. No preamble, no quotation marks, no Markdown code fences.',
+  ],
+  concise: [
+    'You are an expert prompt editor.',
+    "Tighten and clarify the user's draft without making it longer than necessary.",
+    '',
+    'Rules:',
+    LANGUAGE_RULE,
+    '- Remove repetition, filler, and ambiguity while keeping every concrete fact and requirement.',
+    '- Prefer direct, actionable wording over explanations.',
+    '- If the original is already clear, make only small improvements.',
+    '- Return only the improved prompt. No preamble, no quotation marks, no Markdown code fences.',
+  ],
+};
 
 function jsonResponse(status, value) {
   return new Response(JSON.stringify(value), {
@@ -47,6 +88,27 @@ function codedError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+function positiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback;
+}
+
+function resolveOptions(config) {
+  const value = config !== null && typeof config === 'object' ? config : {};
+  return {
+    maxInputChars: positiveInteger(value.maxInputChars, DEFAULT_OPTIONS.maxInputChars),
+    maxOutputTokens: positiveInteger(value.maxOutputTokens, DEFAULT_OPTIONS.maxOutputTokens),
+    timeoutMs: positiveInteger(value.timeoutMs, DEFAULT_OPTIONS.timeoutMs),
+    systemPrompt: typeof value.systemPrompt === 'string' && value.systemPrompt.trim().length > 0
+      ? value.systemPrompt.trim()
+      : undefined,
+  };
+}
+
+function resolveMode(mode) {
+  return Object.prototype.hasOwnProperty.call(MODE_PROMPTS, mode) ? mode : 'general';
 }
 
 function resolveRoute(ctx, sessionId) {
@@ -91,24 +153,28 @@ function stripWrapping(text) {
 }
 
 /**
- * Run one prompt-enhancement model call.
+ * Run one prompt-enhancement model call with metadata.
  * @param {object} ctx - Host context with agents, llm, and agentDefaultModel.
  * @param {string} text - the draft text to rewrite.
  * @param {string | undefined} sessionId - session whose logged route should be reused.
  * @param {AbortSignal} signal - caller cancellation.
- * @returns {Promise<string>} the enhanced prompt.
+ * @param {object} options - resolved plugin options.
+ * @param {string} mode - prompt mode: general, system, task, or concise.
+ * @returns {Promise<{enhanced: string, mode: string, usage: object | null, elapsedMs: number, model: object}>}
  */
-export async function enhancePrompt(ctx, text, sessionId, signal) {
+export async function enhancePromptDetailed(ctx, text, sessionId, signal, options = DEFAULT_OPTIONS, mode = 'general') {
+  const resolvedMode = resolveMode(mode);
   const route = resolveRoute(ctx, sessionId);
   if (route === undefined) {
     throw codedError('no-route', 'No model route is available. Choose a model in the composer first.');
   }
-  const timeoutSignal = AbortSignal.timeout(TIMEOUT_MS);
+  const startedAt = Date.now();
+  const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? DEFAULT_OPTIONS.timeoutMs);
   const callSignal = signal === undefined ? timeoutSignal : AbortSignal.any([signal, timeoutSignal]);
   const prepared = await ctx.llm.prepareCall({
     provider: route.provider,
     model: route.model,
-    maxTokens: MAX_OUTPUT_TOKENS,
+    maxTokens: options.maxOutputTokens ?? DEFAULT_OPTIONS.maxOutputTokens,
   }, callSignal, (controls, modelInfo) => {
     const effort = modelInfo.reasoning?.efforts?.[0]?.id;
     return effort === undefined ? controls : { ...controls, reasoningEffort: effort };
@@ -117,13 +183,18 @@ export async function enhancePrompt(ctx, text, sessionId, signal) {
     role: 'user',
     content: [{ type: 'text', text: inputFor(text) }],
   }];
+  const customPrompt = options.systemPrompt;
+  const system = customPrompt === undefined
+    ? MODE_PROMPTS[resolvedMode].join('\n')
+    : `${LANGUAGE_RULE}\n\n${customPrompt}`;
   let output = '';
   let blockText = '';
+  let usage = null;
   let finish;
   const stream = prepared.stream({
     ...prepared.config,
     messages,
-    system: SYSTEM_PROMPT,
+    system,
     ...(sessionId === undefined ? {} : { sessionId }),
     purpose: 'prompt-enhancer-plus',
     signal: callSignal,
@@ -133,6 +204,8 @@ export async function enhancePrompt(ctx, text, sessionId, signal) {
       output += chunk.text;
     } else if (chunk.type === 'block-end' && chunk.block?.type === 'text') {
       blockText += chunk.block.text;
+    } else if (chunk.type === 'usage') {
+      usage = chunk.usage;
     } else if (chunk.type === 'finish') {
       finish = chunk.reason;
     }
@@ -147,10 +220,26 @@ export async function enhancePrompt(ctx, text, sessionId, signal) {
   if (enhanced.length === 0) {
     throw codedError('empty-output', 'The model returned no text.');
   }
-  return enhanced;
+  return {
+    enhanced,
+    mode: resolvedMode,
+    usage: usage ?? null,
+    elapsedMs: Date.now() - startedAt,
+    model: { provider: route.provider, model: route.model },
+  };
 }
 
-async function handleEnhance(ctx, request) {
+/**
+ * Run one prompt-enhancement model call and return only the text.
+ * Kept as the simple public helper used by tests and small integrations.
+ * @returns {Promise<string>}
+ */
+export async function enhancePrompt(ctx, text, sessionId, signal, options = DEFAULT_OPTIONS, mode = 'general') {
+  const result = await enhancePromptDetailed(ctx, text, sessionId, signal, options, mode);
+  return result.enhanced;
+}
+
+async function handleEnhance(ctx, request, options) {
   if (request.method !== 'POST') {
     return jsonResponse(405, { error: { code: 'method', message: 'Method not allowed.' } });
   }
@@ -164,20 +253,21 @@ async function handleEnhance(ctx, request) {
   if (text.length === 0) {
     return jsonResponse(400, { error: { code: 'empty-input', message: 'Enter some text to enhance first.' } });
   }
-  if (text.length > MAX_INPUT_CHARS) {
+  if (text.length > options.maxInputChars) {
     return jsonResponse(400, {
       error: {
         code: 'too-long',
-        message: `The draft is ${text.length} characters; the limit is ${MAX_INPUT_CHARS}.`,
+        message: `The draft is ${text.length} characters; the limit is ${options.maxInputChars}.`,
       },
     });
   }
   const sessionId = typeof payload?.sessionId === 'string' && payload.sessionId.length > 0
     ? payload.sessionId
     : undefined;
+  const mode = resolveMode(typeof payload?.mode === 'string' ? payload.mode : 'general');
   try {
-    const enhanced = await enhancePrompt(ctx, text, sessionId, request.signal);
-    return jsonResponse(200, { enhanced });
+    const result = await enhancePromptDetailed(ctx, text, sessionId, request.signal, options, mode);
+    return jsonResponse(200, result);
   } catch (error) {
     return jsonResponse(502, {
       error: {
@@ -191,12 +281,14 @@ async function handleEnhance(ctx, request) {
 /**
  * Install the authenticated enhancement route.
  * @param {object} ctx - Host plugin context.
+ * @param {object} config - optional row config: maxInputChars, maxOutputTokens, timeoutMs, systemPrompt.
  */
-export function apply(ctx) {
+export function apply(ctx, config) {
+  const options = resolveOptions(config);
   ctx.effect(() => ctx.connection.fetch.register({
     path: ROUTE_PATH,
     methods: ['POST'],
     requestBody: 'buffered',
-    fetch: (request) => handleEnhance(ctx, request),
+    fetch: (request) => handleEnhance(ctx, request, options),
   }), 'prompt-enhancer-plus: LLM route');
 }
