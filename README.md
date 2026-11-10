@@ -17,262 +17,10 @@
 </p>
 
 <p align="center">
-  <a href="#english"><b>English</b></a> ·
   <a href="#中文"><b>中文</b></a> ·
+  <a href="#english"><b>English</b></a> ·
   <a href="README.zh.md">中文单独版</a>
 </p>
-
----
-
-<a id="english"></a>
-
-# English
-
-## Why Prompt Spark
-
-Most prompt tools make a prompt *sound* better. Prompt Spark makes it **executable**: the result is structured enough for a downstream model to parse, and natural enough for a human to read.
-
-One core, many entry points:
-
-- a native **composer button** in DeepSeek Harness;
-- a **bottom-panel button** in VS Code and Cursor;
-- a **`/enhance` command** in Claude Code;
-- a **global hotkey** for ChatGPT Desktop, Claude Desktop, or any other app.
-
-Nothing is sent automatically. You always review the result first.
-
-## Highlights
-
-| | Feature | What it does |
-| :---: | --- | --- |
-| 🧩 | **Machine-readable skeleton** | Emits `Task:`, `Requirements:`, `Acceptance criteria:`, `Constraints:`, and at the detailed level `Context:` / `Failure cases:`. Plain text, not Markdown or JSON. |
-| 🎚️ | **Three detail levels** | `concise` polishes only · `standard` adds proportional structure (default) · `detailed` expands boundaries and acceptance criteria. |
-| 🗂️ | **Project-aware (DSH)** | Reads `AGENTS.md`, `CLAUDE.md`, `README.md`, `README.zh.md` and `package.json` from the session workspace as reference data. |
-| 🎭 | **Reusable personas** | Save *how* prompts should be rewritten — product, engineering, writing, minimal — and reuse them across sessions. |
-| 👀 | **Editable preview** | Review and edit the full result before replacing the draft; five-entry history and ten-second undo. |
-| 🌐 | **Cross-harness** | One local service powers every adapter; the same rules everywhere. |
-
-## Harness support
-
-| Harness | Button inside its own composer? | How it works |
-| --- | :---: | --- |
-| **dsh** | ✅ | Native composer toolbar — `强化提示词` |
-| **VS Code** | ➖ | Bottom-panel webview with a ✨ button, selection command and `Ctrl+Alt+E` |
-| **Cursor** | ➖ | Same VSIX as VS Code |
-| **Claude Code** | ➖ | `/enhance` slash command, optional `UserPromptSubmit` hook |
-| **ChatGPT Desktop** | ➖ | Windows global hotkey + clipboard |
-| **Any other app** | ➖ | Windows global hotkey, CLI, or the local HTTP API |
-
-> Only dsh can place a button **inside** its own composer. Every other harness is limited by its host's extension API; the table shows the closest equivalent.
-
-## Quick start
-
-### dsh
-
-The plugin is a normal DSH bundle. Install the source directory through the DSH plugin manager, then restart DSH.
-
-```yaml
-- id: prompt-enhancer-plus
-  name: dsh-prompt-enhancer-plus
-  config:
-    maxInputChars: 12000
-    maxOutputTokens: 3000
-    timeoutMs: 90000
-```
-
-Write a draft, click **强化提示词** in the composer toolbar, review the result, then **替换草稿** or **复制**.
-
-### Desktop companion (required by every non-DSH adapter)
-
-```sh
-npm install --ignore-scripts
-npm run desktop
-```
-
-On Windows you can also double-click `启动通用窗口.cmd`. The companion listens on a random loopback-only `127.0.0.1` port and writes:
-
-```text
-%APPDATA%/prompt-enhancer-plus-local/session.json
-{ "origin": "http://127.0.0.1:<port>", "token": "<bearer token>", "pid": 1234, "version": "1.6.0", "startedAt": "..." }
-```
-
-Keep the terminal running. Stop it with **Quit** or `Ctrl+C`.
-
-### VS Code / Cursor
-
-```sh
-cd vscode-extension
-npx @vscode/vsce package --allow-missing-repository
-code   --install-extension prompt-spark-vscode-1.0.0.vsix
-cursor --install-extension prompt-spark-vscode-1.0.0.vsix
-```
-
-- Open the **提示词强化** panel in the Panel area, type, choose a detail level, click **✨ 强化**.
-- Select text and press `Ctrl+Alt+E` (`Cmd+Alt+E` on macOS) to replace the selection.
-- Run `Prompt Spark: 输入草稿并强化` to insert at the cursor.
-
-### Claude Code
-
-```sh
-cp .claude/commands/enhance.md <project>/.claude/commands/enhance.md
-```
-
-Then use:
-
-```text
-/enhance 帮我做一个导出 CSV 的功能
-```
-
-Optional: `claude-code/hooks/user-prompt-submit.mjs` appends the structured version as additional context (`PROMPT_SPARK_HOOK=1`). Hooks cannot replace prompt text — that is a Claude Code limitation.
-
-### Any app — Windows global hotkey
-
-```powershell
-hotkey-tool\start-hotkey.cmd
-```
-
-Select text in ChatGPT Desktop, Claude Desktop, or any application, press `Ctrl+Alt+E`, then paste. The tool writes the result to the clipboard and **never auto-pastes**.
-
-### CLI
-
-```sh
-echo "帮我做一个导出 CSV 的功能" | node cli/enhance.mjs --level detailed
-node cli/enhance.mjs --text "..." --context-file AGENTS.md --copy
-```
-
-`stdout` contains only the enhanced text, so it composes with pipelines. Use `--json` for the full result object.
-
-## How it works
-
-```mermaid
-flowchart LR
-    D[Your draft] --> C[prompt-core.js<br/>one rule set]
-    C --> S[Structured prompt]
-    S --> A[Any AI assistant]
-
-    subgraph Adapters
-      D1[dsh composer]
-      D2[VS Code / Cursor]
-      D3[Claude Code]
-      D4[Global hotkey / CLI]
-    end
-
-    D1 --> C
-    D2 --> L[Local service<br/>POST /api/enhance]
-    D3 --> L
-    D4 --> L
-    L --> C
-```
-
-Outside dsh, every adapter talks to the same local service. The service owns the model call and reuses `prompt-core.js`; adapters only move text in and out.
-
-## Output contract
-
-The same draft at three levels:
-
-```text
-concise
-Task: 做一个导出 CSV 的功能。
-Requirements: 1. 可选择导出字段；2. 支持 UTF-8。
-
-standard
-Task: 做一个导出 CSV 的功能。
-Requirements: 1. 可选择导出字段；2. 支持 UTF-8。
-Acceptance criteria: 导出文件能在 Excel 中正常打开，字段与选择一致。
-Constraints: 不修改现有数据结构。
-
-detailed
-Task: 做一个导出 CSV 的功能。
-Context: 现有系统已支持列表筛选，导出需复用筛选结果。
-Requirements: 1. 可选择导出字段；2. 支持 UTF-8；3. 大数据量分批写入。
-Acceptance criteria: 导出文件能在 Excel 中正常打开；字段与选择一致；10 万行内不超时。
-Constraints: 不修改现有数据结构；不新增第三方依赖。
-Failure cases: 无数据时导出空文件并提示；字段全不选时按钮禁用。
-```
-
-Design rules:
-
-- labels stay **English** as stable machine anchors, even when the content is Chinese;
-- the prose after each label follows the user's language;
-- sections without real content are omitted — no empty placeholders;
-- no JSON/YAML/XML unless the draft explicitly requests a machine format;
-- item count stays proportional to the source; no padding.
-
-## Local API
-
-```text
-POST /api/enhance   { text, mode?, level?, format?, personaId?, direction?, context? }
-                    → { ok: true, value: { enhanced, mode, level, format, model, usage, elapsedMs } }
-POST /api/health    → { ok: true, value: { ready: true, version } }
-```
-
-Every `/api/*` call requires:
-
-- `Authorization: Bearer <token>` from `session.json`;
-- `Origin: <origin>` exactly equal to the session origin;
-- `Host: 127.0.0.1:<port>`.
-
-No CORS, no LAN binding. `context` is capped at 8000 characters; unknown `level` falls back to `standard`.
-
-## Project-aware enhancement (dsh)
-
-The DSH host reads these files from the session workspace, in order:
-
-`AGENTS.md` → `CLAUDE.md` → `README.md` → `README.zh.md` → `package.json`
-
-| Rule | Value |
-| --- | --- |
-| Per-file limit | 6000 characters |
-| Total limit | 8000 characters |
-| Injection point | system prompt, labelled as **reference data only** |
-| Task message | never receives project context |
-| Failure behaviour | silently degrades to no context |
-
-The preview panel has a **项目感知** toggle; the `prompt_enhancer` tool accepts `useProject`.
-
-## Development
-
-```sh
-npm install --ignore-scripts
-npm test
-npm run desktop:smoke
-npm pack --dry-run
-```
-
-`npm test` runs nine suites without Electron and without calling a real model:
-
-| Suite | Covers |
-| --- | --- |
-| `test-core` | rules, levels, symbol preservation |
-| `test-host` | DSH host/tool compatibility |
-| `test-personas` | persona persistence and conflicts |
-| `test-client` | client state machine |
-| `test-features` | project context and three levels |
-| `desktop/test-server` | loopback API security and contract |
-| `desktop/test-desktop` | desktop UI logic |
-| `vscode-extension/test-client` | VS Code client contract |
-| `hotkey-tool/test-cli` | CLI and discovery file |
-
-## Privacy
-
-- No other application's composer, clipboard history, credentials, or login is read.
-- Only an explicit **enhance** action sends the draft and directions to the model API you configured.
-- The local service binds to loopback only, checks exact `Host`/`Origin`, and uses a random bearer token.
-- The desktop companion stores model configuration and explicitly authored directions — not task history.
-- Keys stay in process memory in browser mode; the optional Electron entry can use OS secure storage, and refuses plaintext fallback.
-
-## Known limitations
-
-- Only dsh can put a button inside its native composer. The other integrations are panel/command/hotkey equivalents.
-- The VS Code extension is built locally as a VSIX; it is not published to the Marketplace.
-- The Windows hotkey tool requires PowerShell 7 and passes the selection as a command-line argument, so extremely long selections can hit the Windows argument limit — use the CLI with stdin for very long drafts.
-- The Claude Code hook can add context but cannot replace the submitted prompt.
-- Structured output is enforced by generation instructions, not by a deterministic parser; a model may occasionally deviate.
-- Not visually verified in this working copy: real VS Code/Cursor windows, a real pressed global hotkey, Claude Code slash-command execution. The Electron entry still fails natively with `0x80000003`.
-
-## License
-
-MIT © Erfan817
 
 ---
 
@@ -523,5 +271,257 @@ npm pack --dry-run
 - 本次工作区未做视觉验证：真实 VS Code / Cursor 窗口、真实按下的全局热键、Claude Code 命令执行。Electron 入口仍以 `0x80000003` 失败。
 
 ## 许可证
+
+MIT © Erfan817
+
+---
+
+<a id="english"></a>
+
+# English
+
+## Why Prompt Spark
+
+Most prompt tools make a prompt *sound* better. Prompt Spark makes it **executable**: the result is structured enough for a downstream model to parse, and natural enough for a human to read.
+
+One core, many entry points:
+
+- a native **composer button** in DeepSeek Harness;
+- a **bottom-panel button** in VS Code and Cursor;
+- a **`/enhance` command** in Claude Code;
+- a **global hotkey** for ChatGPT Desktop, Claude Desktop, or any other app.
+
+Nothing is sent automatically. You always review the result first.
+
+## Highlights
+
+| | Feature | What it does |
+| :---: | --- | --- |
+| 🧩 | **Machine-readable skeleton** | Emits `Task:`, `Requirements:`, `Acceptance criteria:`, `Constraints:`, and at the detailed level `Context:` / `Failure cases:`. Plain text, not Markdown or JSON. |
+| 🎚️ | **Three detail levels** | `concise` polishes only · `standard` adds proportional structure (default) · `detailed` expands boundaries and acceptance criteria. |
+| 🗂️ | **Project-aware (DSH)** | Reads `AGENTS.md`, `CLAUDE.md`, `README.md`, `README.zh.md` and `package.json` from the session workspace as reference data. |
+| 🎭 | **Reusable personas** | Save *how* prompts should be rewritten — product, engineering, writing, minimal — and reuse them across sessions. |
+| 👀 | **Editable preview** | Review and edit the full result before replacing the draft; five-entry history and ten-second undo. |
+| 🌐 | **Cross-harness** | One local service powers every adapter; the same rules everywhere. |
+
+## Harness support
+
+| Harness | Button inside its own composer? | How it works |
+| --- | :---: | --- |
+| **dsh** | ✅ | Native composer toolbar — `强化提示词` |
+| **VS Code** | ➖ | Bottom-panel webview with a ✨ button, selection command and `Ctrl+Alt+E` |
+| **Cursor** | ➖ | Same VSIX as VS Code |
+| **Claude Code** | ➖ | `/enhance` slash command, optional `UserPromptSubmit` hook |
+| **ChatGPT Desktop** | ➖ | Windows global hotkey + clipboard |
+| **Any other app** | ➖ | Windows global hotkey, CLI, or the local HTTP API |
+
+> Only dsh can place a button **inside** its own composer. Every other harness is limited by its host's extension API; the table shows the closest equivalent.
+
+## Quick start
+
+### dsh
+
+The plugin is a normal DSH bundle. Install the source directory through the DSH plugin manager, then restart DSH.
+
+```yaml
+- id: prompt-enhancer-plus
+  name: dsh-prompt-enhancer-plus
+  config:
+    maxInputChars: 12000
+    maxOutputTokens: 3000
+    timeoutMs: 90000
+```
+
+Write a draft, click **强化提示词** in the composer toolbar, review the result, then **替换草稿** or **复制**.
+
+### Desktop companion (required by every non-DSH adapter)
+
+```sh
+npm install --ignore-scripts
+npm run desktop
+```
+
+On Windows you can also double-click `启动通用窗口.cmd`. The companion listens on a random loopback-only `127.0.0.1` port and writes:
+
+```text
+%APPDATA%/prompt-enhancer-plus-local/session.json
+{ "origin": "http://127.0.0.1:<port>", "token": "<bearer token>", "pid": 1234, "version": "1.6.0", "startedAt": "..." }
+```
+
+Keep the terminal running. Stop it with **Quit** or `Ctrl+C`.
+
+### VS Code / Cursor
+
+```sh
+cd vscode-extension
+npx @vscode/vsce package --allow-missing-repository
+code   --install-extension prompt-spark-vscode-1.0.0.vsix
+cursor --install-extension prompt-spark-vscode-1.0.0.vsix
+```
+
+- Open the **提示词强化** panel in the Panel area, type, choose a detail level, click **✨ 强化**.
+- Select text and press `Ctrl+Alt+E` (`Cmd+Alt+E` on macOS) to replace the selection.
+- Run `Prompt Spark: 输入草稿并强化` to insert at the cursor.
+
+### Claude Code
+
+```sh
+cp .claude/commands/enhance.md <project>/.claude/commands/enhance.md
+```
+
+Then use:
+
+```text
+/enhance 帮我做一个导出 CSV 的功能
+```
+
+Optional: `claude-code/hooks/user-prompt-submit.mjs` appends the structured version as additional context (`PROMPT_SPARK_HOOK=1`). Hooks cannot replace prompt text — that is a Claude Code limitation.
+
+### Any app — Windows global hotkey
+
+```powershell
+hotkey-tool\start-hotkey.cmd
+```
+
+Select text in ChatGPT Desktop, Claude Desktop, or any application, press `Ctrl+Alt+E`, then paste. The tool writes the result to the clipboard and **never auto-pastes**.
+
+### CLI
+
+```sh
+echo "帮我做一个导出 CSV 的功能" | node cli/enhance.mjs --level detailed
+node cli/enhance.mjs --text "..." --context-file AGENTS.md --copy
+```
+
+`stdout` contains only the enhanced text, so it composes with pipelines. Use `--json` for the full result object.
+
+## How it works
+
+```mermaid
+flowchart LR
+    D[Your draft] --> C[prompt-core.js<br/>one rule set]
+    C --> S[Structured prompt]
+    S --> A[Any AI assistant]
+
+    subgraph Adapters
+      D1[dsh composer]
+      D2[VS Code / Cursor]
+      D3[Claude Code]
+      D4[Global hotkey / CLI]
+    end
+
+    D1 --> C
+    D2 --> L[Local service<br/>POST /api/enhance]
+    D3 --> L
+    D4 --> L
+    L --> C
+```
+
+Outside dsh, every adapter talks to the same local service. The service owns the model call and reuses `prompt-core.js`; adapters only move text in and out.
+
+## Output contract
+
+The same draft at three levels:
+
+```text
+concise
+Task: 做一个导出 CSV 的功能。
+Requirements: 1. 可选择导出字段；2. 支持 UTF-8。
+
+standard
+Task: 做一个导出 CSV 的功能。
+Requirements: 1. 可选择导出字段；2. 支持 UTF-8。
+Acceptance criteria: 导出文件能在 Excel 中正常打开，字段与选择一致。
+Constraints: 不修改现有数据结构。
+
+detailed
+Task: 做一个导出 CSV 的功能。
+Context: 现有系统已支持列表筛选，导出需复用筛选结果。
+Requirements: 1. 可选择导出字段；2. 支持 UTF-8；3. 大数据量分批写入。
+Acceptance criteria: 导出文件能在 Excel 中正常打开；字段与选择一致；10 万行内不超时。
+Constraints: 不修改现有数据结构；不新增第三方依赖。
+Failure cases: 无数据时导出空文件并提示；字段全不选时按钮禁用。
+```
+
+Design rules:
+
+- labels stay **English** as stable machine anchors, even when the content is Chinese;
+- the prose after each label follows the user's language;
+- sections without real content are omitted — no empty placeholders;
+- no JSON/YAML/XML unless the draft explicitly requests a machine format;
+- item count stays proportional to the source; no padding.
+
+## Local API
+
+```text
+POST /api/enhance   { text, mode?, level?, format?, personaId?, direction?, context? }
+                    → { ok: true, value: { enhanced, mode, level, format, model, usage, elapsedMs } }
+POST /api/health    → { ok: true, value: { ready: true, version } }
+```
+
+Every `/api/*` call requires:
+
+- `Authorization: Bearer <token>` from `session.json`;
+- `Origin: <origin>` exactly equal to the session origin;
+- `Host: 127.0.0.1:<port>`.
+
+No CORS, no LAN binding. `context` is capped at 8000 characters; unknown `level` falls back to `standard`.
+
+## Project-aware enhancement (dsh)
+
+The DSH host reads these files from the session workspace, in order:
+
+`AGENTS.md` → `CLAUDE.md` → `README.md` → `README.zh.md` → `package.json`
+
+| Rule | Value |
+| --- | --- |
+| Per-file limit | 6000 characters |
+| Total limit | 8000 characters |
+| Injection point | system prompt, labelled as **reference data only** |
+| Task message | never receives project context |
+| Failure behaviour | silently degrades to no context |
+
+The preview panel has a **项目感知** toggle; the `prompt_enhancer` tool accepts `useProject`.
+
+## Development
+
+```sh
+npm install --ignore-scripts
+npm test
+npm run desktop:smoke
+npm pack --dry-run
+```
+
+`npm test` runs nine suites without Electron and without calling a real model:
+
+| Suite | Covers |
+| --- | --- |
+| `test-core` | rules, levels, symbol preservation |
+| `test-host` | DSH host/tool compatibility |
+| `test-personas` | persona persistence and conflicts |
+| `test-client` | client state machine |
+| `test-features` | project context and three levels |
+| `desktop/test-server` | loopback API security and contract |
+| `desktop/test-desktop` | desktop UI logic |
+| `vscode-extension/test-client` | VS Code client contract |
+| `hotkey-tool/test-cli` | CLI and discovery file |
+
+## Privacy
+
+- No other application's composer, clipboard history, credentials, or login is read.
+- Only an explicit **enhance** action sends the draft and directions to the model API you configured.
+- The local service binds to loopback only, checks exact `Host`/`Origin`, and uses a random bearer token.
+- The desktop companion stores model configuration and explicitly authored directions — not task history.
+- Keys stay in process memory in browser mode; the optional Electron entry can use OS secure storage, and refuses plaintext fallback.
+
+## Known limitations
+
+- Only dsh can put a button inside its native composer. The other integrations are panel/command/hotkey equivalents.
+- The VS Code extension is built locally as a VSIX; it is not published to the Marketplace.
+- The Windows hotkey tool requires PowerShell 7 and passes the selection as a command-line argument, so extremely long selections can hit the Windows argument limit — use the CLI with stdin for very long drafts.
+- The Claude Code hook can add context but cannot replace the submitted prompt.
+- Structured output is enforced by generation instructions, not by a deterministic parser; a model may occasionally deviate.
+- Not visually verified in this working copy: real VS Code/Cursor windows, a real pressed global hotkey, Claude Code slash-command execution. The Electron entry still fails natively with `0x80000003`.
+
+## License
 
 MIT © Erfan817
