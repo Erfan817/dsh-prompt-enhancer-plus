@@ -74,6 +74,7 @@
   },
   "scripts": {
     "test": "node test-core.mjs && node test-host.mjs && node test-personas.mjs && node test-preferences.mjs && node test-client.mjs && node test-features.mjs && node test-skills.mjs && node desktop/test-desktop.mjs && node desktop/test-server.mjs && node vscode-extension/test-client.mjs && node hotkey-tool/test-cli.mjs",
+    "ci:package": "node scripts/check-package.mjs",
     "claude:build": "node claude-code/build-native.mjs",
     "claude:validate": "node claude-code/build-native.mjs --check && claude plugin validate claude-code/native-plugin",
     "claude:test": "node claude-code/build-native.mjs --check && claude plugin test claude-code/native-plugin",
