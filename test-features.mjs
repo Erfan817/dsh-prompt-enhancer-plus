@@ -123,7 +123,7 @@ await test('host reads project files via fs and feeds them into the system witho
   const content = streamCalls[0].messages[0].content[0].text;
   assert.deepEqual(JSON.parse(content.slice(content.indexOf('\n') + 1)), { request: 'Add a button' });
   assert.doesNotMatch(content, /AGENTS_RULE|my-app/u);
-  assert.deepEqual(Object.keys(result).sort(), ['elapsedMs', 'enhanced', 'format', 'model', 'mode', 'persona', 'usage'].sort());
+  assert.deepEqual(Object.keys(result).sort(), ['elapsedMs', 'enhanced', 'format', 'model', 'mode', 'persona', 'usage', 'skillContext'].sort());
 });
 
 await test('useProject:false disables reading and a missing fs degrades safely', async () => {

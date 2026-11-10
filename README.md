@@ -25,7 +25,7 @@
 
 ---
 
-**Prompt Spark 是什么？** 它是一套开源提示词强化工具：DSH 插件提供原生输入框按钮，本地服务与轻量适配器把同一套规则带到 VS Code、Cursor、Claude Code、CLI 和其他 Windows 应用。它会把草稿整理为包含任务、要求、验收标准和约束的可读文本，减少后续补充背景与边界的沟通。
+**Prompt Spark 是什么？** 它是一套开源提示词强化工具：DSH 提供原生输入框按钮；兼容构建的 Claude Code 使用原生 function hooks 插件，无需本机服务；旧适配器通过本地服务连接 VS Code、Cursor、CLI 和其他 Windows 应用。它会把草稿整理为包含任务、要求、验收标准和约束的可读文本，减少后续补充背景与边界的沟通。
 
 **What is Prompt Spark?** It is an open-source prompt enhancement tool with a native DSH composer button, a local companion service, and thin adapters for VS Code, Cursor, Claude Code, a CLI, and other Windows apps. It turns a rough draft into readable tasks, requirements, acceptance criteria, and constraints, so you spend less time adding missing context and boundaries later.
 
@@ -52,7 +52,7 @@
 | **先审阅，再使用**<br>*Review before use* | DSH 支持全文预览和编辑、最近五条记录与十秒撤销；由你决定复制或替换草稿。<br>*DSH provides an editable preview, five recent entries, and ten-second undo. You decide whether to copy or replace.* |
 | **可复用人格与偏好**<br>*Reusable personas & preferences* | 保存产品、工程、写作、极简等改写方向；DSH 还能从手动修改前后的差异中提议可复用偏好，审阅后才保存。<br>*Save rewriting directions and, in DSH, review preferences inferred from your manual edits before anything is stored.* |
 | **项目感知（DSH）**<br>*Project-aware (DSH)* | 可将 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md` 和 `package.json` 作为参考数据，让改写更贴合当前项目。<br>*Use project instruction and metadata files as reference data for more relevant rewrites.* |
-| **一个核心，多个入口**<br>*One core, many entry points* | DSH 直接复用核心；其他适配器连接同一个本机服务，规则集中维护，不在每个客户端重复实现。<br>*DSH uses the core directly; other adapters share one local service and one maintained rule set.* |
+| **一个核心，多个入口**<br>*One core, many entry points* | DSH 和 Claude Code 原生插件复用强化核心及各自宿主的模型接口；旧适配器连接本机服务，规则集中维护。<br>*DSH and native Claude Code use shared rules with host model clients; legacy adapters use the local service.* |
 
 ## 看看输出长什么样 · Example
 
@@ -90,7 +90,8 @@ npm install --ignore-scripts
 ```
 
 - **DSH 原生集成**：需要 DSH `>=0.2.2-rc.1`。<br>*The native DSH integration requires DSH `>=0.2.2-rc.1`.*
-- **桌面伴侣、CLI 与其他适配器**：需要 Node.js 22+。<br>*The companion service, CLI, and other adapters require Node.js 22+.*
+- **Claude Code 原生插件**：需要支持 function hooks 的宿主，不需要额外 Node 进程或本机服务。<br>*Native Claude Code requires a compatible function-hooks build, not an extra Node process or local service.*
+- **桌面伴侣、CLI 与旧适配器**：需要 Node.js 22+。<br>*The companion service, CLI, and legacy adapters require Node.js 22+.*
 - **Windows 全局热键**：需要 Windows 10/11 和 PowerShell 7（`pwsh`）。<br>*The global hotkey requires Windows 10/11 and PowerShell 7 (`pwsh`).*
 
 ### DSH：在输入框里直接使用 · Use the native DSH button
@@ -105,7 +106,7 @@ DSH 强化默认使用当前会话选择的 provider/model，不需要启动桌�
 
 ### 非 DSH 入口：启动并配置本地服务 · Start and configure the companion
 
-所有非 DSH 适配器都需要本地服务。在仓库根目录运行，并保持终端开启：
+旧 VS Code/Cursor、CLI、Windows 热键和 `/enhance` 命令需要本地服务；DSH 和新的 Claude Code 原生插件不需要。在仓库根目录运行，并保持终端开启：
 
 *Every non-DSH adapter needs the local companion. Run this from the repository root and keep the terminal open:*
 
@@ -142,7 +143,15 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 
 详细安装、命令与故障排查见 [VS Code / Cursor 指南](vscode-extension/README.md)。<br>*See the [VS Code / Cursor guide](vscode-extension/README.md) for detailed installation, commands, and troubleshooting.*
 
-### Claude Code：`/enhance` 命令 · Slash command
+### Claude Code：原生插件 · Native plugin
+
+推荐 [`claude-code/native-plugin`](claude-code/native-plugin/README.md)：在输入区上方点击「✨ 强化」，审阅并编辑预览，再确认替换草稿。支持三档详细度、复制、取消与撤销，不自动发送。使用宿主当前会话模型和凭据，不需要桌面伴侣、本机 HTTP 服务或额外 API Key；强化仍消耗模型用量。
+
+*The native function-hooks plugin adds a composer-adjacent button, editable preview and explicit draft replacement. It uses the host model client, with no companion service or separate API key. Model usage still applies.*
+
+需要支持 `hooks.modules`、`AbovePrompt`、草稿读写及模型 completion 的 early-access 构建；不是所有 Claude Code 版本都保证兼容。开发加载和验证见 [Claude Code 指南](claude-code/README.md)。
+
+#### 旧命令入口（可选） · Legacy slash command
 
 1. 保持 `npm run desktop` 运行。<br>*Keep `npm run desktop` running.*
 2. 将本仓库的 `.claude/commands/enhance.md` 复制到目标项目的 `.claude/commands/enhance.md`，或用户级 `~/.claude/commands/enhance.md`。如果仓库不在命令中登记的默认目录，请修改默认路径，或将 `PROMPT_SPARK_CLI` 设置为 `cli/enhance.mjs` 的绝对路径。<br>*Copy this repository's `.claude/commands/enhance.md` to the target project or your user-level `.claude/commands/` directory. If your checkout differs from the command's registered default path, edit that path or set `PROMPT_SPARK_CLI` to the absolute path of `cli/enhance.mjs`.*
@@ -152,9 +161,9 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 /enhance 帮我做一个导出 CSV 的功能，要能选字段
 ```
 
-Claude Code 没有公开的 UI 扩展 API，因此这里使用斜杠命令，而不是注入输入框按钮。可选 `UserPromptSubmit` hook 需显式启用，只能把强化版作为附加上下文，不能替换原文。配置方法见 [Claude Code 指南](claude-code/README.md)。
+旧命令仍依赖本机服务，不是新原生插件的前置条件。可选传统 `UserPromptSubmit` hook 需显式启用，只能追加上下文，不能替换原文；不要与原生 function hooks 混淆。配置方法见 [Claude Code 指南](claude-code/README.md)。
 
-*Claude Code exposes no public UI extension API, so Prompt Spark uses a slash command rather than injecting a composer button. The optional `UserPromptSubmit` hook is opt-in and can only append the enhanced version as context; it cannot replace your prompt. See the [Claude Code guide](claude-code/README.md).*
+*The legacy command still requires the companion. Classic UserPromptSubmit hooks append context; the new native plugin uses a separate function-hooks API for UI and draft access.*
 
 ### 任意 Windows 应用：全局热键 · Global hotkey for Windows apps
 
@@ -187,15 +196,16 @@ node cli/enhance.mjs --text "..." --context-file AGENTS.md --copy
 flowchart LR
     D[Draft / 草稿] --> A{Adapter / 入口}
     A -->|DSH| C[prompt-core.js<br/>one shared rule set]
-    A -->|Other adapters| L[Local service<br/>POST /api/enhance]
+    A -->|Native Claude Code| C
+    A -->|Legacy adapters| L[Local service<br/>POST /api/enhance]
     L --> C
     C --> R[Structured prompt / 结构化提示词]
     R --> U[Review, edit & use<br/>审阅、编辑、使用]
 ```
 
-除 DSH 外，所有适配器都调用同一个本机服务。模型调用与强化规则由服务统一负责，适配器只负责传入文本和带回结果。
+DSH 和 Claude Code 原生插件直接复用强化规则，由各自宿主执行模型调用。旧面板、CLI、热键及 `/enhance` 适配器仍调用本机服务。Claude Code 插件中的规则副本由 `npm run claude:build` 同步，`--check` 检查漂移。
 
-*Outside DSH, every adapter talks to the same loopback service. The service owns the model call and reuses `prompt-core.js`; adapters only move text in and out.*
+*DSH and the native Claude Code plugin use host model clients and shared rules. Legacy adapters still use the loopback service. The native plugin's bundled rules are synchronized by the build script.*
 
 ## 进一步了解 · Advanced details
 
@@ -214,6 +224,12 @@ DSH Host 按顺序读取 `AGENTS.md` → `CLAUDE.md` → `README.md` → `README
 | 总上限 · Total limit | 8000 字符 · characters |
 | 文件缺失或不可读 · Missing/unreadable files | 静默降级为无上下文 · Silently continue without context |
 | 开关 · Toggle | 预览面板「项目感知」/ `useProject` 工具参数 · Preview toggle / tool argument |
+
+### Skill 感知（DSH） · Skill references
+
+侧栏「参考 Skill」默认开启，与项目感知独立。读取当前会话/工作目录可见且允许模型调用的 Skill 目录，以名称、描述和触发条件做关键词匹配，只按需加载最多三个正文（每个 6000 字符，总计 12000 字符）。结果显示参考来源、截断和不可用状态。Skill 是改写参考而非要执行的任务：不运行命令、不加载引用文件，不扫描任意下载目录或自动安装 Skill。匹配为启发式，不保证同义词召回；无匹配时正常强化，无额外选择模型调用。Skill 参考会发送到当前强化模型。仅支持 DSH，已有插件更新需重启 DSH 并刷新页面。
+
+*The independent, default-on Reference Skills switch matches the session-visible, model-invocable catalog by keywords in names, descriptions and triggers. Up to three bodies are loaded on demand (6000 characters each, 12000 total), with reference metadata shown in the preview. It does not execute Skills, follow resource links or discover arbitrary download folders. Matching is heuristic, not semantic search; no extra selection model call is made. References are sent to the enhancement model. DSH only; restart DSH and refresh the page after updating an existing installation.*
 
 ### 从编辑中学习 · Learn from edits
 
@@ -307,13 +323,13 @@ POST /api/health    → { ok: true, value: { ready: true, version } }
 | **DSH** | Composer 工具栏的 **强化提示词**<br>*Native composer toolbar button* | ✅ |
 | **VS Code** | 底部面板、选中文本命令、`Ctrl+Alt+E` / `Cmd+Alt+E`<br>*Bottom panel, selection command, keyboard shortcut* | ➖ |
 | **Cursor** | 与 VS Code 共用同一个 VSIX<br>*Uses the same VSIX as VS Code* | ➖ |
-| **Claude Code** | `/enhance`，或可选 `UserPromptSubmit` hook<br>*Slash command or optional hook* | ➖ |
+| **Claude Code** | 原生 function hooks 插件：输入区上方按钮、预览与回填；旧命令可选<br>*Native plugin on compatible builds; legacy command optional* | ✅ 输入区上方，需兼容构建 |
 | **其他 Windows 应用 · Other Windows apps** | 全局热键与剪贴板<br>*Global hotkey and clipboard* | ➖ |
 | **脚本与终端 · Scripts & terminals** | CLI 或本机 HTTP API<br>*CLI or local HTTP API* | ➖ |
 
-只有 DSH 能把按钮放进自己的原生输入框；其他入口受宿主 API 限制，采用面板、命令或热键等等价方案。
+DSH 使用 Composer 插槽；Claude Code 原生插件使用兼容构建的 `AbovePrompt` 和草稿读写接口，不做 DOM 注入。其他入口仍使用面板、命令或热键。Codex 原生适配尚未实现。
 
-*Only DSH can place the button inside its native composer. Host API limitations require panel, command, or hotkey equivalents elsewhere.*
+*DSH uses composer slots; the native Claude Code plugin uses supported function-hooks UI and draft APIs, not DOM injection. Other adapters use panels, commands or hotkeys. A native Codex adapter is not implemented.*
 
 ## 隐私与安全 · Privacy
 

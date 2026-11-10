@@ -8,7 +8,7 @@
 
 大多数提示词工具只是让提示词“读起来更顺”。Prompt Spark 追求的是**可执行**：结果既结构化到下游模型能稳定解析，又自然到人可以直接阅读。
 
-一个核心，多个入口：DeepSeek Harness 里的原生输入框按钮、VS Code / Cursor 里的底部面板按钮、Claude Code 里的 `/enhance` 命令，以及任意软件的全局热键。不会自动发送任何内容。
+一个核心，多个入口：DeepSeek Harness 的原生输入框按钮、兼容构建的 Claude Code 原生插件（输入区按钮、预览和回填）、VS Code / Cursor 的底部面板，以及任意软件的全局热键。不会自动发送任何内容。
 
 ### 功能亮点
 
@@ -35,7 +35,7 @@
 
 #### 桌面伴侣
 
-所有非 DSH 适配器都需要本机服务。保持终端运行；用窗口里的「退出」或 `Ctrl+C` 关闭。
+旧 VS Code/Cursor、CLI、热键及 `/enhance` 入口需要本机服务；DSH 和 Claude Code 原生插件不需要。保持终端运行；用窗口里的「退出」或 `Ctrl+C` 关闭。
 
 ```sh
 npm install --ignore-scripts
@@ -57,7 +57,9 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 
 #### Claude Code
 
-将 `.claude/commands/enhance.md` 复制到项目或用户级 `.claude/commands/`，然后使用 `/enhance <你的草稿>`。可选 `UserPromptSubmit` hook 只能添加上下文，不能替换用户原文，且默认关闭。
+推荐原生 [`claude-code/native-plugin`](claude-code/native-plugin/README.md)：输入区上方按钮 → 可编辑预览 → 确认替换，不自动发送。使用宿主当前模型和凭据，不依赖桌面伴侣、HTTP 服务或额外 API Key，但仍消耗模型用量。需要支持 function hooks 的构建，详见 [Claude Code 指南](claude-code/README.md)。
+
+旧 `/enhance` 命令和可选 `UserPromptSubmit` hook 保留兼容，仍依赖本机服务；传统 hook 只能追加上下文，不能替换原文。
 
 #### 任意软件（Windows）
 
@@ -110,6 +112,12 @@ POST /api/health    → { ready: true, version }
 ### 提示词强化速度
 
 强化使用**当前 DSH 会话选择的 provider/model**，不静默切换供应商；辅助请求默认尝试模型支持的最低推理档（优先 `off`），超时为 30 秒。若仍超时，请检查当前路由额度、模型是否只返回 reasoning 而没有正文，以及推理强度是否过高。当前安装路由曾返回 WorkBuddy Credits exhausted（429）；这类额度错误需要在账户或模型路由侧处理，改写提示词本身不能解决。
+
+### Skill 感知（DSH）
+
+强化面板侧栏的「参考 Skill」默认开启，与项目感知独立。插件通过 DSH Skill 注册表读取当前会话与工作目录可见、允许模型调用的 Skill，按名称、描述和触发条件与草稿的关键词匹配；最多加载三个相关 Skill 正文，每个最多 6000 字符，总计最多 12000 字符。预览显示参考名称、来源和截断/不可用状态。没有匹配时沿用普通强化，不额外调用模型进行选择。
+
+例如草稿提到 AI 漫剧或去 AI 味，已登记的 Skill 描述也包含相应词语时，会把相关方法作为改写参考。此版本是关键词匹配，不保证理解同义词；不会扫描任意下载目录，不会自动安装 Skill，也不会执行脚本或读取 Skill 引用的附属文件。Skill 内容会随本次强化请求发送至所选模型。桌面伴侣和其他适配器暂未接入 Skill 发现。更新已有 DSH 插件后需重启 DSH 并刷新页面。
 
 ### 项目感知
 
