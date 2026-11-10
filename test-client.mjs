@@ -5,7 +5,7 @@ import vm from 'node:vm';
 let definition;
 let helpers;
 let fetchImpl;
-const source = fs.readFileSync(new URL('./client.js', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('./client.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const instrumented = source.replace("    return {\n      inject: ['slots', 'locale'],", "    capture({ createStore, createPersonaStore, requestEnhance, createOverlayBridge, createSessionController, normalizeFormat, personaName, localizedError, STYLES, EN, ZH });\n    return {\n      inject: ['slots', 'locale'],");
 assert.notEqual(source, instrumented);
 const memory = new Map();
