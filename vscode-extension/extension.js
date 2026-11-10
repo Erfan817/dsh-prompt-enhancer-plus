@@ -213,14 +213,34 @@ function getWebviewHtml(webview) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>提示词强化</title>
   <style>
-    :root { color-scheme: light dark; }
+    :root { color-scheme: light dark; --ps-glass: blur(14px) saturate(1.1); }
     body {
       margin: 0;
       padding: 10px 12px 12px;
       font-family: var(--vscode-font-family, sans-serif);
       font-size: var(--vscode-font-size, 13px);
       color: var(--vscode-foreground);
-      background: var(--vscode-panel-background, var(--vscode-editor-background, transparent));
+      background:
+        radial-gradient(720px 420px at 8% 0%, color-mix(in srgb, var(--vscode-focusBorder, #4d6bfe) 14%, transparent), transparent 62%),
+        color-mix(in srgb, var(--vscode-panel-background, var(--vscode-editor-background, #1e1e1e)) 82%, transparent);
+      backdrop-filter: var(--ps-glass);
+    }
+    .page {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 960px;
+      padding: 10px;
+      border: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--vscode-panel-background, var(--vscode-editor-background, #1e1e1e)) 88%, transparent);
+      backdrop-filter: var(--ps-glass);
+    }
+    @supports not (backdrop-filter: blur(1px)) {
+      body, .page { background: var(--vscode-panel-background, var(--vscode-editor-background, #1e1e1e)); }
+    }
+    @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+      body, .page { backdrop-filter: none; background: var(--vscode-panel-background, var(--vscode-editor-background, #1e1e1e)); }
     }
     .page { display: flex; flex-direction: column; gap: 8px; max-width: 960px; }
     .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
