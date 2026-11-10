@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import { threadOptions, disabledFeatures } from './overlay/enhance.mjs';
+
+const original = { model: 'my-model', mcp_servers: { secret_connector: { enabled: true } }, plugins: { 'test@market': { enabled: true } } };
+const untouched = structuredClone(original);
+const options = threadOptions({ text: '测试草稿', level: 'concise', cwd: '/test/project/runtime', config: original });
+assert.deepEqual(original, untouched, 'The adapter must not mutate the user config.');
+assert.equal(options.ephemeral, true);
+assert.equal(options.sandbox, 'read-only');
+assert.equal(options.approvalPolicy, 'never');
+assert.equal(options.config['mcp_servers.secret_connector.enabled'], false);
+assert.equal(options.config['plugins.test@market.enabled'], false);
+assert.equal(options.config.web_search, 'disabled');
+assert.equal(options.config.project_doc_max_bytes, 0);
+for (const name of disabledFeatures) assert.equal(options.config[`features.${name}`], false);
+assert.ok(!('model' in options), 'Use the existing configured default model without switching it.');
+assert.throws(() => threadOptions({ text: '' }));
+assert.throws(() => threadOptions({ text: 'x'.repeat(12001) }));
+assert.throws(() => threadOptions({ text: 'valid', level: 'unknown' }));
+console.log('Overlay model isolation and input guards passed; user configuration remains untouched.');

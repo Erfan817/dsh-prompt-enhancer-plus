@@ -41,6 +41,10 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run regression tests (mock models only)
         run: npm test
+      - name: Check Codex overlay review, undo, and window state
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./codex/overlay/launch.ps1 -Check
       - name: Check bundled native rules and brand icon
         run: node claude-code/build-native.mjs --check
       - name: Smoke-test local service without opening a browser

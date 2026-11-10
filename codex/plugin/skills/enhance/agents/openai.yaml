@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prompt Spark · 提示词强化"
+  short_description: "在桌面编辑面板中强化提示词，支持三档详细度、可编辑预览和放入输入框"
+  default_prompt: "使用 $prompt-spark:enhance 打开 Prompt Spark 桌面提示词编辑面板。"
