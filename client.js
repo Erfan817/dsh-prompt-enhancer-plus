@@ -47,7 +47,11 @@ window.__ModuleLoader__.load({
       modeConcise: 'Concise',
       levelLabel: 'Length', levelConcise: 'Concise', levelStandard: 'Standard', levelDetailed: 'Detailed',
       projectLabel: 'Project-aware', projectHint: 'Read AGENTS.md/README/package.json from the workspace',
+      enhancePreview: 'Enhance preview again', previewRerunHint: 'Enhance the current preview, even unchanged. No preference learning is required; the composer stays untouched.',
+      skillPicker: 'Choose Skill references', skillAuto: 'Automatic matching', skillManual: 'Manual selection (up to 3)',
+      skillRefresh: 'Refresh Skills', skillLoading: 'Loading Skills…', skillCatalogready: 'Available Skills', skillCatalogpartial: 'Some Skills are unavailable', skillCatalogunavailable: 'Skills unavailable', skillNoChoices: 'No Skills available', skillMatched: 'Suggested matches (updated on refresh; not the result reference record)', skillMissing: 'No longer available',
       skillsLabel: 'Reference Skills', skillsHint: 'Include relevant Skill guidance in the next enhancement, independently of project awareness. This does not execute Skills or guarantee the model follows them.',
+      skillScanLocations: 'Scanned locations', skillScanmissing: 'Missing', skillScanok: 'Available', skillScanerror: 'Read error', skillScanlimited: 'Scan limited', skillScanCount: 'Skills found',
       skillReference: 'Skill references', skillUnknown: 'No Skill reference metadata was recorded for this result.',
       skillmatched: 'Relevant Skill guidance was provided as reference.', skillnone: 'No relevant Skills matched.',
       skilldisabled: 'Skill references were disabled.', skillunavailable: 'Skill references were unavailable.',
@@ -123,7 +127,11 @@ window.__ModuleLoader__.load({
       modeConcise: '简洁润色',
       levelLabel: '长度档', levelConcise: '简洁', levelStandard: '标准', levelDetailed: '详细',
       projectLabel: '项目感知', projectHint: '从工作区读取 AGENTS.md/README/package.json 作为背景',
+      enhancePreview: '再次强化预览', previewRerunHint: '基于当前预览继续强化，未编辑也可继续；无需学习偏好，不会改动输入框。',
+      skillPicker: '选择参考 Skill', skillAuto: '自动匹配', skillManual: '手动选择（最多 3 个）',
+      skillRefresh: '刷新 Skill', skillLoading: '正在加载 Skill…', skillCatalogready: '可用 Skill', skillCatalogpartial: '部分 Skill 不可用', skillCatalogunavailable: 'Skill 暂不可用', skillNoChoices: '没有可用 Skill', skillMatched: '建议匹配（刷新后更新，并非结果的实际参考记录）', skillMissing: '已不可用',
       skillsLabel: '参考 Skill', skillsHint: '下次强化时加入相关 Skill 指引，与项目感知独立；不会执行 Skill，也不保证模型遵循指引。',
+      skillScanLocations: '扫描位置', skillScanmissing: '不存在', skillScanok: '可用', skillScanerror: '读取失败', skillScanlimited: '扫描受限', skillScanCount: '发现数量',
       skillReference: '参考 Skill', skillUnknown: '此结果未记录参考 Skill 元数据。',
       skillmatched: '已提供相关 Skill 指引作为参考。', skillnone: '未匹配到相关 Skill。',
       skilldisabled: '已关闭参考 Skill。', skillunavailable: '参考 Skill 暂不可用。',
@@ -309,6 +317,7 @@ window.__ModuleLoader__.load({
           name: skill.name,
           ...(typeof skill.description === 'string' ? { description: skill.description } : {}),
           ...(typeof skill.source === 'string' ? { source: skill.source } : {}),
+          ...(typeof skill.path === 'string' ? { path: skill.path } : {}),
           ...(typeof skill.truncated === 'boolean' ? { truncated: skill.truncated } : {}),
         })) : [],
         ...(Array.isArray(context.warnings) ? { warnings: context.warnings.filter(warning => typeof warning === 'string') } : {}),
@@ -407,7 +416,7 @@ window.__ModuleLoader__.load({
         });
         const payload = await response.json().catch(() => null);
         if (store.get().requestId !== requestId) return;
-        if (signal?.aborted) { store.update({ status: retainedStatus }); return; }
+        if (signal?.aborted) { store.update({ status: retainedStatus, ...(preservePreview ? { skillContext: previous.skillContext } : {}) }); return; }
         if (!response.ok) throw new Error(localizedError(payload?.error?.code, payload?.error?.message, t));
         const enhanced = payload?.enhanced;
         if (typeof enhanced !== 'string' || enhanced.trim().length === 0) throw new Error(t('emptyResult'));
@@ -437,8 +446,8 @@ window.__ModuleLoader__.load({
         });
       } catch (error) {
         if (store.get().requestId !== requestId) return;
-        if (signal?.aborted || error?.name === 'AbortError') { store.update({ status: retainedStatus }); return; }
-        store.update({ status: preservePreview ? retainedStatus : 'error', error: error instanceof Error ? error.message : t('failed') });
+        if (signal?.aborted || error?.name === 'AbortError') { store.update({ status: retainedStatus, ...(preservePreview ? { skillContext: previous.skillContext } : {}) }); return; }
+        store.update({ status: preservePreview ? retainedStatus : 'error', ...(preservePreview ? { skillContext: previous.skillContext } : {}), error: error instanceof Error ? error.message : t('failed') });
       }
     }
 
@@ -499,12 +508,44 @@ window.__ModuleLoader__.load({
       let input = options.input;
       let disposed = false;
       let pending = null;
+      let pendingPreviewContext;
       let undoTimer;
       let timedUndo = null;
       let connection;
       let appliedBaseline = null;
       let reviewRequest = null;
       let reviewEpoch = 0;
+      let skillsRequest = null;
+      const loadSkills = async () => {
+        if (disposed || skillsRequest) return;
+        const controller = new AbortController();
+        skillsRequest = controller;
+        store.update({ skillsLoading: true });
+        try {
+          const response = await fetch('/api/prompt-enhancer-plus/skills', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sessionId, text: store.get().enhanced || input.draft }), signal: controller.signal,
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error('unavailable');
+          if (!disposed && !controller.signal.aborted) store.update({ skillCatalog: {
+            status: ['ready', 'partial', 'unavailable'].includes(payload.status) ? payload.status : 'unavailable',
+            skills: normalizeSkillContext({ status: 'matched', skills: payload.skills }).skills,
+            matchedNames: Array.isArray(payload.matchedNames) ? payload.matchedNames.filter(name => typeof name === 'string') : [],
+            diagnostics: Array.isArray(payload.diagnostics) ? payload.diagnostics.filter(item => item && ['missing', 'ok', 'error', 'limited'].includes(item.status)).map(item => ({
+              source: typeof item.source === 'string' ? item.source : '',
+              path: typeof item.path === 'string' ? item.path : '',
+              status: item.status,
+              count: Number.isSafeInteger(item.count) && item.count >= 0 ? item.count : 0,
+            })) : [],
+          } });
+        } catch {
+          if (!disposed && !controller.signal.aborted) store.update({ skillCatalog: { status: 'unavailable', skills: [], matchedNames: [] } });
+        } finally {
+          if (skillsRequest === controller) { skillsRequest = null; if (!disposed) store.update({ skillsLoading: false }); }
+        }
+      };
+      const openPanel = () => { bridge.open(sessionId); if (store.get().skillCatalog === null) void loadSkills(); };
       const preferenceCall = async (request, signal) => {
         const response = await fetch('/api/prompt-enhancer-plus/preferences', {
           method: 'POST', headers: { 'content-type': 'application/json' },
@@ -539,7 +580,7 @@ window.__ModuleLoader__.load({
             && state.status !== 'busy' && state.learning === null && library.get().ready,
           draftMatchesTarget,
           canApply: targetCurrent && state.learning === null && state.status !== 'busy' && state.enhanced.trim().length > 0,
-          canRerun: targetCurrent && state.status === 'preview' && state.learning === null && state.originalDraft.trim().length > 0 && library.get().ready,
+          canRerun: hasActions && state.status !== 'busy' && state.learning === null && state.enhanced.trim().length > 0 && library.get().ready,
           canUndo: editable && hasActions && state.undo !== null
             && state.undo.expiresAt > Date.now() && input.draft === state.undo.applied,
         };
@@ -561,26 +602,29 @@ window.__ModuleLoader__.load({
         if (pending === null) return;
         pending.abort();
         pending = null;
-        store.update({ requestId: store.get().requestId + 1, status: 'idle', error: '' });
+        store.update({ requestId: store.get().requestId + 1, status: store.get().enhanced ? 'preview' : 'idle',
+          ...(pendingPreviewContext !== undefined ? { skillContext: pendingPreviewContext } : {}), error: '' });
+        pendingPreviewContext = undefined;
       };
       const run = (request) => {
         if (disposed || pending !== null) return undefined;
         const controller = new AbortController();
         appliedBaseline = null;
         pending = controller;
-        bridge.open(sessionId);
+        pendingPreviewContext = request.preservePreview ? store.get().skillContext : undefined;
+        openPanel();
         return requestEnhance(store, {
           ...request, sessionId, t, signal: controller.signal,
           isCurrentDraft: () => !disposed && input.phase === 'plain'
             && input.draft === request.targetDraft && !store.get().targetInvalidated,
-        }).finally(() => { if (pending === controller) pending = null; });
+        }).finally(() => { if (pending === controller) { pending = null; pendingPreviewContext = undefined; } });
       };
       const maybeLearn = async (request, baseline) => {
         if (!baseline?.id || baseline.text === request.text || !related(baseline.text, request.text)) return run(request);
         const epoch = ++reviewEpoch;
         const controller = new AbortController();
         reviewRequest = { request, controller, invalidated: false };
-        bridge.open(sessionId);
+        openPanel();
         store.update({ learning: { status: 'inferring', scope: 'project' }, error: '' });
         try {
           const proposal = await preferenceCall({ action: 'infer', baselineId: baseline.id, text: request.text }, controller.signal);
@@ -593,7 +637,12 @@ window.__ModuleLoader__.load({
         }
       };
       const actions = {
-        open() { if (!disposed) bridge.open(sessionId); },
+        open() { if (!disposed) openPanel(); },
+        refreshSkills() { return loadSkills(); },
+        setSkillNames(names) {
+          if (!disposed && store.get().status !== 'busy' && store.get().learning === null) store.update({ skillNames: normalizeSkillNames(names) });
+        },
+        cancel() { if (!disposed) cancelRequest(); },
         close() {
           if (disposed) return;
           if (store.get().learning?.status === 'saving') return;
@@ -610,20 +659,22 @@ window.__ModuleLoader__.load({
             text: previewEdited ? state.enhanced.trim() : input.draft.trim(), originalDraft: input.draft, targetDraft: input.draft,
             insertion: input.inputActions.captureInsertion(),
             mode: store.get().mode, format: store.get().format,
-            level: store.get().level, useProject: store.get().useProject, useSkills: store.get().useSkills,
+            level: store.get().level, useProject: store.get().useProject, useSkills: store.get().useSkills, skillNames: state.skillNames,
             personaId: library.get().selectedId,
           }, previewEdited ? { id: state.baselineId, text: state.generated } : appliedBaseline);
         },
-        rerun(patch) {
+        rerun(patch = {}) { return actions.enhancePreview(patch); },
+        enhancePreview(patch = {}) {
           if (disposed || !snapshot().canRerun) return undefined;
           const state = store.get();
-          return maybeLearn({
-            text: state.enhanced !== state.generated ? state.enhanced.trim() : state.originalDraft.trim(), originalDraft: state.originalDraft, targetDraft: state.targetDraft,
+          return run({
+            text: state.enhanced.trim(), originalDraft: state.originalDraft, targetDraft: state.targetDraft,
             insertion: state.insertion, mode: patch.mode ?? state.mode, format: patch.format ?? state.format,
             level: patch.level ?? state.level, useProject: patch.useProject ?? state.useProject,
             useSkills: patch.useSkills ?? state.useSkills,
-            personaId: state.persona?.id ?? library.get().selectedId,
-          }, state.enhanced !== state.generated ? { id: state.baselineId, text: state.generated } : null);
+            skillNames: patch.skillNames === undefined ? state.skillNames : patch.skillNames,
+            personaId: library.get().selectedId, preservePreview: true,
+          });
         },
         changeLearning(patch) {
           const learning = store.get().learning;
@@ -719,18 +770,18 @@ window.__ModuleLoader__.load({
             insertion: input.inputActions?.captureInsertion() ?? null, targetInvalidated: input.phase !== 'plain',
             persona: saved.persona ?? null, enhanced: saved.enhanced, generated: saved.enhanced,
             mode: saved.mode, format: saved.format, level: saved.level,
-            useProject: saved.useProject, useSkills: saved.useSkills, skillContext: saved.skillContext,
+            useProject: saved.useProject, useSkills: saved.useSkills, skillNames: saved.skillNames, skillContext: saved.skillContext,
             usage: saved.usage ?? null,
             elapsedMs: Number.isFinite(saved.elapsedMs) ? saved.elapsedMs : null,
             model: saved.model ?? null, error: '',
           });
-          bridge.open(sessionId);
+          openPanel();
         },
         personas(seed) {
           if (disposed || store.get().status === 'busy' || store.get().learning !== null) return;
           void library.load();
           store.update({ panelView: 'personas', editorSeed: seed });
-          bridge.open(sessionId);
+          openPanel();
         },
         preview() { if (!disposed) store.update({ panelView: 'preview', editorSeed: undefined }); },
         setUseProject(value) { if (!disposed) store.update({ useProject: value !== false }); },
@@ -765,6 +816,7 @@ window.__ModuleLoader__.load({
         dispose() {
           if (disposed) return;
           disposed = true;
+          skillsRequest?.abort();
           reviewEpoch++; reviewRequest?.controller.abort(); reviewRequest = null;
           store.update({ learning: null });
           unsubscribeStore();
@@ -773,7 +825,7 @@ window.__ModuleLoader__.load({
           if (pending !== null) {
             pending.abort();
             pending = null;
-            store.update({ requestId: store.get().requestId + 1, status: 'idle', error: '' });
+            store.update({ requestId: store.get().requestId + 1, status: store.get().enhanced ? 'preview' : 'idle', error: '' });
           }
           if (store.get().insertion !== null || store.get().undo !== null) store.update({ targetInvalidated: true, undo: null });
           connection.disconnect();
@@ -1035,7 +1087,7 @@ window.__ModuleLoader__.load({
         h('p', { className: 'pe-help' }, t(context ? `skill${context.status}` : 'skillUnknown')),
         ...(context?.skills ?? []).map((skill, index) => h('p', { key: index, className: 'pe-help' },
           skill.name, skill.description ? ` — ${skill.description}` : '',
-          skill.source ? ` (${skill.source})` : '', skill.truncated ? ` · ${t('skillTruncated')}` : '')),
+          skill.source ? ` (${skill.source})` : '', skill.path ? ` · ${skill.path}` : '', skill.truncated ? ` · ${t('skillTruncated')}` : '')),
         ...(context?.warnings ?? []).map((warning, index) => h('p', { key: `warning-${index}`, className: 'pe-help' }, `${t('skillWarnings')}: ${warning}`)));
     }
 
@@ -1049,6 +1101,28 @@ window.__ModuleLoader__.load({
           onChange: (event) => actions.setUseSkills(event.target.checked),
         }), t('skillsLabel')),
         h('p', { className: 'pe-help' }, t('skillsHint')),
+        h('details', null,
+          h('summary', null, t('skillPicker')),
+          h('select', {
+            'aria-label': t('skillPicker'), value: state.skillNames === null ? 'auto' : 'manual',
+            disabled: state.status === 'busy' || state.learning !== null,
+            onChange: event => actions.setSkillNames(event.target.value === 'auto' ? null : []),
+          }, h('option', { value: 'auto' }, t('skillAuto')), h('option', { value: 'manual' }, t('skillManual'))),
+          h('p', { className: 'pe-help', role: 'status' }, t(state.skillsLoading ? 'skillLoading' : `skillCatalog${state.skillCatalog?.status ?? 'unavailable'}`)),
+          h('button', { type: 'button', className: 'pe-action', disabled: state.skillsLoading, onClick: () => { void actions.refreshSkills(); } }, t('skillRefresh')),
+          state.skillNames === null ? h('p', { className: 'pe-help' }, t('skillMatched')) : null,
+          ...[...(state.skillCatalog?.skills ?? []), ...(state.skillNames ?? []).filter(name => !(state.skillCatalog?.skills ?? []).some(skill => skill.name === name)).map(name => ({ name, description: t('skillMissing') }))].map(skill => h('label', { key: skill.name, className: 'pe-field' },
+            h('span', null, h('input', {
+              type: 'checkbox', style: { width: 'auto', minHeight: 0 }, checked: state.skillNames === null ? (state.skillCatalog?.matchedNames ?? []).includes(skill.name) : state.skillNames.includes(skill.name),
+              disabled: state.skillNames === null || state.status === 'busy' || state.learning !== null || (!state.skillNames.includes(skill.name) && state.skillNames.length >= 3),
+              onChange: event => actions.setSkillNames(event.target.checked ? [...state.skillNames, skill.name] : state.skillNames.filter(name => name !== skill.name)),
+            }), skill.name), h('span', null, skill.description || '', skill.source ? ` (${skill.source})` : ''),
+            skill.path ? h('span', { style: { overflowWrap: 'anywhere' } }, skill.path) : null)),
+          state.skillCatalog?.skills.length === 0 ? h('p', { className: 'pe-help' }, t('skillNoChoices')) : null,
+          state.skillCatalog?.diagnostics?.length ? h('details', null,
+            h('summary', null, t('skillScanLocations')),
+            ...state.skillCatalog.diagnostics.map((item, index) => h('p', { key: index, className: 'pe-help', style: { overflowWrap: 'anywhere' } },
+              item.source, ' · ', item.path, ' · ', t(`skillScan${item.status}`), ` · ${t('skillScanCount')}: ${item.count}`))) : null),
         h('h3', null, t('personaTitle')),
         h('select', {
           className: 'pe-persona-list', 'aria-label': t('personaSelected'), value: catalog.selectedId,
@@ -1194,26 +1268,27 @@ window.__ModuleLoader__.load({
             hasResult ? h(React.Fragment, null,
               h('div', { className: 'pe-output-controls' },
                 h('label', null, t('modeLabel'), h('select', {
-                  value: state.mode, disabled: !snapshot.canRerun, title: t('rerunHint'),
+                  value: state.mode, disabled: !snapshot.canRerun, title: t('previewRerunHint'),
                   onChange: (event) => { void actions.rerun({ mode: event.target.value }); },
                 }, ...MODES.map((mode) => h('option', { key: mode, value: mode }, t(`mode${mode[0].toUpperCase()}${mode.slice(1)}`))))),
                 h('label', null, t('formatLabel'), h('select', {
-                  value: state.format, disabled: !snapshot.canRerun, title: t('rerunHint'),
+                  value: state.format, disabled: !snapshot.canRerun, title: t('previewRerunHint'),
                   onChange: (event) => { void actions.rerun({ format: event.target.value }); },
                 }, ...FORMATS.map((format) => h('option', { key: format, value: format }, t(format === 'markdown' ? 'formatMarkdown' : 'formatPlain'))))),
                 h('label', null, t('levelLabel'), h('select', {
-                  value: state.level, disabled: !snapshot.canRerun, title: t('rerunHint'),
+                  value: state.level, disabled: !snapshot.canRerun, title: t('previewRerunHint'),
                   onChange: (event) => { void actions.rerun({ level: event.target.value }); },
                 }, ...LEVELS.map((level) => h('option', { key: level, value: level }, t(`level${level[0].toUpperCase()}${level.slice(1)}`))))),
                 h('label', { title: t('projectHint') }, h('input', {
                   type: 'checkbox', checked: state.useProject !== false,
                   onChange: (event) => { actions.setUseProject(event.target.checked); },
                 }), t('projectLabel'))),
-              h('p', { className: 'pe-help' }, t('rerunHint')),
+              h('button', { type: 'button', className: 'pe-action pe-primary', disabled: !snapshot.canRerun, onClick: () => { void actions.enhancePreview(); } }, t('enhancePreview')),
+              h('p', { className: 'pe-help' }, t('previewRerunHint')),
               h(SkillReferences, { context: state.skillContext, t }),
               h('p', { className: 'pe-help pe-editor-hint' }, t('editHint')),
               h(AutoGrowingTextarea, {
-                className: 'pe-preview-text', value: state.enhanced, disabled: state.learning !== null, 'aria-label': t('editLabel'), spellCheck: false,
+                className: 'pe-preview-text', value: state.enhanced, disabled: state.learning !== null || state.status === 'busy', 'aria-label': t('editLabel'), spellCheck: false,
                 onChange: (event) => actions.editPreview(event.target.value),
               }),
               !snapshot.canApply ? h('p', { className: 'pe-help', role: 'status' }, t(snapshot.editable ? 'previewChanged' : 'phaseLocked')) : null)
@@ -1229,9 +1304,10 @@ window.__ModuleLoader__.load({
         personas ? h('button', { type: 'button', className: 'pe-action', onClick: actions.preview }, t('back'))
           : h('div', { className: 'pe-actions' },
             h('button', { type: 'button', className: 'pe-action pe-primary', disabled: !snapshot.canApply, onClick: actions.replace }, t('apply')),
+            h('button', { type: 'button', className: 'pe-action', disabled: !snapshot.canRerun, onClick: () => { void actions.enhancePreview(); } }, t('enhancePreview')),
             h('button', { type: 'button', className: 'pe-action', disabled: !snapshot.canStart, onClick: () => { void actions.start(); } }, t('regenerate')),
             h('button', { type: 'button', className: 'pe-action', disabled: !hasResult || state.enhanced.length === 0, onClick: copy }, t(copied ? 'copied' : 'copy')),
-            state.status === 'busy' ? h('button', { type: 'button', className: 'pe-action', onClick: actions.close }, t('cancel')) : null),
+            state.status === 'busy' ? h('button', { type: 'button', className: 'pe-action', onClick: actions.cancel }, t('cancel')) : null),
         h('span', { className: 'pe-help pe-preview-status' }, state.enhanced !== state.generated ? t('edited') : t('resultFormatHint')))));
     }
 

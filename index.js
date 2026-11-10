@@ -413,7 +413,9 @@ export class PromptEnhancerService {
 
   listSkills(request, signal) {
     const context = this.context(request.sessionId);
-    return listSkillChoices(this.ctx, typeof request.text === 'string' ? request.text.slice(0, this.options.maxInputChars) : '', request.sessionId, context.cwd, signal);
+    const timeout = AbortSignal.timeout(this.options.timeoutMs ?? DEFAULT_OPTIONS.timeoutMs);
+    const callSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    return listSkillChoices(this.ctx, typeof request.text === 'string' ? request.text.slice(0, this.options.maxInputChars) : '', request.sessionId, context.cwd, callSignal);
   }
 
   async enhance(request, signal) {
@@ -450,7 +452,7 @@ export function enhancerTool(service) {
   return {
     name: 'prompt_enhancer',
     deferLoading: true,
-    description: 'Enhance prompts with saved directions; manage personas and list/delete applicable learned preferences. Learning confirmation is user-only. Does not send messages or change the composer.',
+    description: 'Enhance prompts with saved directions; list available Skills, manage personas and list/delete applicable learned preferences. Learning confirmation is user-only. Does not send messages or change the composer.',
     parameters: {
       type: 'object',
       properties: {

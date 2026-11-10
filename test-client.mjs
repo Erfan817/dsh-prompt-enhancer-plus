@@ -5,6 +5,7 @@ import vm from 'node:vm';
 let definition;
 let helpers;
 let fetchImpl;
+let skillsFetchImpl = async () => ({ ok: true, json: async () => ({ status: 'ready', skills: [], matchedNames: [] }) });
 const source = fs.readFileSync(new URL('./client.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const instrumented = source.replace("    return {\n      inject: ['slots', 'locale'],", "    capture({ createStore, createPersonaStore, requestEnhance, createOverlayBridge, createSessionController, normalizeFormat, normalizeSkillContext, PersonaRail, SkillReferences, personaName, localizedError, STYLES, EN, ZH });\n    return {\n      inject: ['slots', 'locale'],");
 assert.notEqual(source, instrumented);
@@ -15,7 +16,7 @@ const sandbox = {
     __ModuleLoader__: { load(value) { definition = value; } },
     localStorage: { getItem: (key) => memory.get(key) ?? null, setItem: (key, value) => memory.set(key, value) },
   },
-  fetch: (...args) => fetchImpl(...args),
+  fetch: (...args) => args[0].endsWith('/skills') ? skillsFetchImpl(...args) : fetchImpl(...args),
   Date, JSON, console, AbortController, Error,
 };
 vm.runInNewContext(instrumented, sandbox);
@@ -216,7 +217,7 @@ const makeSession = (sessionId, initialDraft = 'Original task') => {
     clearTimer(timer) { timers.delete(timer); },
   });
   const fixture = {
-    store, bridge: sessionBridge, controller, writes, captures, timers,
+    store, bridge: sessionBridge, controller, writes, captures, timers, catalog,
     snapshot: () => sessionBridge.get().sessions[sessionId]?.snapshot,
     draft: () => liveDraft,
     sync() { controller.updateInput({ draft: liveDraft, phase, inputActions }); },
@@ -291,8 +292,109 @@ let directSkillBody;
 fetchImpl = async (_url, options) => { directSkillBody = JSON.parse(options.body); return response({ enhanced: 'Direct' }); };
 await helpers.requestEnhance(helpers.createStore('direct-skills'), params());
 assert.equal(directSkillBody.useSkills, true, 'requestEnhance defaults to enabled');
+assert.equal(directSkillBody.skillNames, null, 'omitted selection defaults to auto');
+assert.equal(legacy.get().history[0].skillNames, null);
 await helpers.requestEnhance(helpers.createStore('direct-skills-off'), params({ useSkills: false }));
 assert.equal(directSkillBody.useSkills, false);
+
+let catalogCalls = 0;
+let catalogBody;
+skillsFetchImpl = async (_url, options) => {
+  catalogCalls++; catalogBody = JSON.parse(options.body);
+  return response({ status: 'partial', skills: [{ name: 'one', description: 'First Skill', source: 'Claude 用户', path: 'D:/skills/one/SKILL.md', body: 'PRIVATE_SKILL' }, { name: 'two', description: 'Second Skill' }], matchedNames: ['one'],
+    diagnostics: [...['missing', 'ok', 'error', 'limited'].map((status, index) => ({ source: 'Claude 用户', path: `D:/scan/${status}`, status, count: index, body: 'PRIVATE_DIAGNOSTIC' })), { status: 'invented' }, null] });
+};
+const selection = makeSession('selection');
+selection.controller.actions.open();
+await tick();
+assert.equal(catalogCalls, 1);
+assert.equal(catalogBody.sessionId, 'selection');
+assert.equal(selection.store.get().skillCatalog.skills[0].description, 'First Skill');
+assert.ok(!JSON.stringify(selection.store.get().skillCatalog).includes('PRIVATE_SKILL'));
+selection.controller.actions.open();
+selection.changeDraft('New input');
+assert.equal(catalogCalls, 1, 'opening again and editing do not automatically reload metadata');
+await selection.controller.actions.refreshSkills();
+assert.equal(catalogCalls, 2);
+const manualRail = helpers.PersonaRail({ snapshot: selection.snapshot(), actions: selection.controller.actions,
+  library: { get: () => ({ ready: true, personas: [], selectedId: '' }), subscribe: () => () => {} }, t: key => key });
+assert.ok(JSON.stringify(manualRail).includes('First Skill'));
+assert.ok(JSON.stringify(manualRail).includes('D:/skills/one/SKILL.md'));
+assert.ok(JSON.stringify(manualRail).includes('skillScanLocations'));
+assert.equal(selection.store.get().skillCatalog.diagnostics.length, 4);
+assert.ok(!JSON.stringify(selection.store.get().skillCatalog).includes('PRIVATE_DIAGNOSTIC'));
+for (const status of ['missing', 'ok', 'error', 'limited']) {
+  assert.ok(JSON.stringify(manualRail).includes(`skillScan${status}`));
+  assert.ok(helpers.EN[`skillScan${status}`]);
+  assert.ok(helpers.ZH[`skillScan${status}`]);
+}
+assert.equal(selection.store.get().skillCatalog.diagnostics[2].count, 2);
+assert.equal(selection.store.get().skillCatalog.skills[0].path, 'D:/skills/one/SKILL.md');
+const pathContext = helpers.normalizeSkillContext({ status: 'matched', skills: [{ name: 'one', path: 'D:/skills/one/SKILL.md', body: 'PRIVATE_BODY' }] });
+assert.ok(JSON.stringify(helpers.SkillReferences({ context: pathContext, t: key => key })).includes('D:/skills/one/SKILL.md'));
+assert.ok(!JSON.stringify(pathContext).includes('PRIVATE_BODY'));
+assert.equal(skillsSession.store.get().skillCatalog.diagnostics.length, 0, 'old Host payload without diagnostics remains supported');
+const picker = manualRail.children[2];
+assert.equal(picker.type, 'details');
+picker.children[1].props.onChange({ target: { value: 'manual' } });
+assert.equal(selection.store.get().skillNames.length, 0);
+selection.controller.actions.setSkillNames(['one', 'two', 'three', 'four', 'one']);
+assert.equal(selection.store.get().skillNames.join(','), 'one,two,three');
+let selectionBody;
+fetchImpl = async (_url, options) => { selectionBody = JSON.parse(options.body); return response({ enhanced: 'Preview one', baselineId: 'preview-baseline' }); };
+await selection.controller.actions.start();
+assert.equal(selectionBody.skillNames.join(','), 'one,two,three');
+const selectedHistory = helpers.createStore('selection').get().history[0];
+selection.controller.actions.setSkillNames(null);
+selection.controller.actions.openHistory(selectedHistory);
+assert.equal(selection.store.get().skillNames.join(','), 'one,two,three');
+selection.controller.actions.setSkillNames([]);
+selection.catalog.selectedId = 'custom:changed-persona';
+await selection.controller.actions.enhancePreview();
+assert.equal(selectionBody.personaId, 'custom:changed-persona', 'preview uses the current sidebar persona');
+assert.equal(selectionBody.text, 'Preview one', 'unchanged preview is input, not the original composer draft');
+assert.equal(selectionBody.skillNames.length, 0, 'manual empty selection is distinct from auto');
+selection.controller.actions.setSkillNames(null);
+selection.controller.actions.editPreview('Preview edited for another pass');
+selection.changeDraft('Different composer text');
+selection.setPhase('sending');
+assert.equal(selection.snapshot().canRerun, true);
+assert.equal(selection.snapshot().canApply, false);
+const previewPending = deferred();
+fetchImpl = async (url, options) => {
+  assert.ok(url.endsWith('/enhance'), 'preview rerun never enters preference learning');
+  selectionBody = JSON.parse(options.body);
+  return previewPending.promise;
+};
+const previewRequest = selection.controller.actions.enhancePreview();
+assert.equal(selectionBody.text, 'Preview edited for another pass');
+assert.equal(selectionBody.skillNames, null);
+assert.equal(selection.store.get().enhanced, 'Preview edited for another pass', 'pending request preserves editor');
+selection.controller.actions.editPreview('Ignored while busy');
+assert.equal(selection.store.get().enhanced, 'Preview edited for another pass');
+previewPending.resolve(response({ enhanced: 'Preview second pass', skillContext: { status: 'matched', skills: [{ name: 'one' }] } }));
+await previewRequest;
+assert.equal(selection.store.get().enhanced, 'Preview second pass');
+assert.equal(selection.snapshot().canApply, false);
+assert.equal(selection.controller.actions.replace(), false);
+fetchImpl = async () => { throw new Error('Preview failure'); };
+await selection.controller.actions.enhancePreview();
+assert.equal(selection.store.get().enhanced, 'Preview second pass');
+assert.equal(selection.store.get().status, 'preview');
+assert.equal(selection.store.get().error, 'Preview failure');
+assert.equal(selection.store.get().skillContext.skills[0].name, 'one', 'failure restores reference metadata of retained result');
+const cancelPreview = deferred();
+fetchImpl = () => cancelPreview.promise;
+const cancelPreviewRequest = selection.controller.actions.enhancePreview();
+selection.controller.actions.cancel();
+assert.equal(selection.bridge.get().activeSessionId, 'selection', 'cancel does not close workspace');
+assert.equal(selection.store.get().skillContext.skills[0].name, 'one', 'cancel restores retained result metadata');
+assert.equal(selection.store.get().enhanced, 'Preview second pass');
+cancelPreview.resolve(response({ enhanced: 'Ignored cancelled result' }));
+await cancelPreviewRequest;
+assert.equal(selection.store.get().enhanced, 'Preview second pass');
+selection.setPhase('plain');
+assert.equal(selection.snapshot().canApply, false, 'preview-only rerun never reauthorizes replacing changed composer');
 
 let enhanceBody;
 fetchImpl = async (_url, options) => {
@@ -355,7 +457,7 @@ await changedBack.controller.actions.start();
 changedBack.changeDraft('Another task');
 changedBack.changeDraft('Original task');
 assert.equal(changedBack.snapshot().canApply, false);
-assert.equal(changedBack.snapshot().canRerun, false);
+assert.equal(changedBack.snapshot().canRerun, true);
 assert.equal(changedBack.controller.actions.replace(), false);
 assert.equal(changedBack.writes.length, 0);
 assert.equal(changedBack.store.get().enhanced, 'Generated result');

@@ -231,6 +231,22 @@ DSH Host 按顺序读取 `AGENTS.md` → `CLAUDE.md` → `README.md` → `README
 
 *The independent, default-on Reference Skills switch matches the session-visible, model-invocable catalog by keywords in names, descriptions and triggers. Up to three bodies are loaded on demand (6000 characters each, 12000 total), with reference metadata shown in the preview. It does not execute Skills, follow resource links or discover arbitrary download folders. Matching is heuristic, not semantic search; no extra selection model call is made. References are sent to the enhancement model. DSH only; restart DSH and refresh the page after updating an existing installation.*
 
+本机目录发现合并 Claude、Codex、共享 Agents、DSH、Cursor、CodeBuddy、WorkBuddy、Qwen、Gemini、Cline、Roo 和 Windsurf 的用户/项目级 `skills` 目录（有限向上查找）；支持 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`，不扫描整盘或市场临时缓存。Skill 项显示来源和路径，「扫描位置」列出已扫描根目录及状态。DSH 同名条目优先，其次最近项目和用户目录，模型调用禁用项不绕过。
+
+*Local discovery additionally checks conventional user/project Skill roots for Claude, Codex, shared Agents, DSH, Cursor, CodeBuddy, WorkBuddy, Qwen, Gemini, Cline, Roo and Windsurf, respecting CLAUDE_CONFIG_DIR and CODEX_HOME. It does not crawl disks or marketplace staging caches. Source paths and scan diagnostics are visible; DSH duplicate-name policy and model invocation restrictions remain authoritative.*
+
+筛选保留能强化描述的创作类参考：文字润色/去 AI 味、漫剧/分镜/剧本、小说、绘图提示词和视觉设计；排除签到、搜索、安装配置、资产管理等纯操作类。它们只贡献专业方法与质量约束，不执行绘图/视频或工具工作流。筛选基于元数据启发式，列表、自动匹配和手动加载使用同一规则。
+
+*Eligible references include prose editing, humanization, comics/storyboards/scripts, fiction, image prompts and visual design—not check-ins, search, installation or asset management. Creative Skills inform the rewritten prompt only; their tools/workflows are never executed. Eligibility is metadata-based and shared by listing, matching and manual loading.*
+
+### 手选 Skill 与连续强化 · Manual Skills and preview iteration
+
+展开侧栏 Skill 选择区可查看当前会话可用 Skill 的名称、描述与匹配建议；可选自动匹配或手动指定最多三个。手动指定不会额外添加自动匹配项，关闭参考开关则不加载正文。刷新目录会更新当前文本的匹配建议。
+
+编辑预览后点击「再次强化预览」，直接以当前全文继续强化，不退出面板、不强制进行偏好学习；沿用 Skill 和输出选项。失败或取消保留预览，原草稿变化只会禁止覆盖草稿，不阻止继续编辑预览。
+
+*Expand the sidebar Skill picker to inspect session-visible names, descriptions and match suggestions. Choose automatic matching or up to three manual references. Enhance preview again iterates on the current preview without leaving the panel or requiring preference learning; failures and cancellation preserve the preview. Changed composer drafts remain protected from replacement.*
+
 ### 从编辑中学习 · Learn from edits
 
 首次强化后，手动修改预览或已替换的输入框，再次强化时，系统可以额外调用模型，从两个版本的差异中提议一条改写习惯。你可以编辑建议、选择范围，并明确确认是否保存；取消不会保存，也不会继续强化。选择 **不保存，继续强化** 会保留已有规则并继续本次强化，但不保存新建议。
