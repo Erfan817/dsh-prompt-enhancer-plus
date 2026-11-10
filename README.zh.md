@@ -1,6 +1,6 @@
 # Prompt Spark · 提示词火花
 
-本 README 现为中英逐段对照精简版，请参阅 [`README.md`](README.md)。
+本文件为中文摘要；完整安装、API 与开发说明请参阅 [`README.md`](README.md)。
 
 ## 纯中文版
 
@@ -134,7 +134,7 @@ npm run desktop:smoke
 npm pack --dry-run
 ```
 
-`npm test` 运行九套无需 Electron、无需真实模型的测试：核心、Host、人格、Client、项目上下文与等级、桌面服务 API、安全、VS Code 客户端、CLI。
+`npm test` 运行十套无需 Electron、无需真实模型的测试：核心、Host、人格、偏好、Client、项目上下文与等级、桌面 UI、桌面服务 API 与安全、VS Code 客户端、CLI。
 
 ### 许可证
 

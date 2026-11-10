@@ -2,11 +2,11 @@
 
 Claude Code 桌面版 / CLI **没有公开的 UI 扩展 API**，无法像 dsh 那样在输入框下方加按钮。官方允许的等价路径是**自定义斜杠命令**（以及可选的 hook）。
 
-本目录提供：
+本仓库提供：
 
 | 文件 | 用途 |
 | --- | --- |
-| `commands/enhance.md` | `/enhance` 斜杠命令模板 |
+| `../.claude/commands/enhance.md` | `/enhance` 斜杠命令模板 |
 | `hooks/user-prompt-submit.mjs` | 可选 hook：提交前把强化版作为附加上下文提供给模型 |
 | `settings.example.json` | hook 的配置示例 |
 
@@ -14,7 +14,7 @@ Claude Code 桌面版 / CLI **没有公开的 UI 扩展 API**，无法像 dsh �
 
 ## 安装 `/enhance`
 
-把 `commands/enhance.md` 复制到下面任一位置：
+把本仓库的 `.claude/commands/enhance.md` 复制到下面任一位置：
 
 - 项目级：`<你的项目>/.claude/commands/enhance.md`
 - 用户级：`~/.claude/commands/enhance.md`

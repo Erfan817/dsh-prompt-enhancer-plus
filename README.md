@@ -5,63 +5,242 @@
 <h1 align="center">Prompt Spark · 提示词火花</h1>
 
 <p align="center">
-  把模糊的想法，变成 AI 真正能执行的结构化提示词。<br>
-  Turn rough ideas into structured prompts an AI can actually execute.
+  把模糊的想法，变成结构清晰、可以审阅的提示词。<br>
+  Turn rough ideas into structured prompts — with you in control of the final text.
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.7.0-4C6FFF">
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-2EA043">
+  <a href="docs/release-1.7.0.md"><img alt="version" src="https://img.shields.io/badge/version-1.7.0-4C6FFF"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-2EA043"></a>
   <img alt="node" src="https://img.shields.io/badge/node-%E2%89%A522-339933">
   <img alt="dsh" src="https://img.shields.io/badge/DSH-%E2%89%A50.2.2--rc.1-5B8DEF">
 </p>
 
 <p align="center">
-  <a href="README.zh.md">中文完整版</a> · <a href="README.md">Bilingual</a>
+  <a href="#快速开始--quick-start">快速开始</a> ·
+  <a href="README.zh.md">中文摘要</a> ·
+  <a href="https://github.com/Erfan817/prompt-spark">GitHub</a> ·
+  <a href="https://github.com/Erfan817/prompt-spark/issues">问题反馈</a>
 </p>
 
 ---
 
-## 为什么是 Prompt Spark · Why Prompt Spark
+**Prompt Spark 是什么？** 它是一套开源提示词强化工具：DSH 插件提供原生输入框按钮，本地服务与轻量适配器把同一套规则带到 VS Code、Cursor、Claude Code、CLI 和其他 Windows 应用。它会把草稿整理为包含任务、要求、验收标准和约束的可读文本，减少后续补充背景与边界的沟通。
 
-**中文：** 大多数提示词工具只是让提示词“读起来更顺”。Prompt Spark 追求的是**可执行**：结果既结构化到下游模型能稳定解析，又自然到人可以直接阅读。一个核心，多个入口 —— dsh 的输入框按钮、VS Code/Cursor 的底部面板、Claude Code 的 `/enhance`、任意软件的全局热键。不会自动发送任何内容。
+**What is Prompt Spark?** It is an open-source prompt enhancement tool with a native DSH composer button, a local companion service, and thin adapters for VS Code, Cursor, Claude Code, a CLI, and other Windows apps. It turns a rough draft into readable tasks, requirements, acceptance criteria, and constraints, so you spend less time adding missing context and boundaries later.
 
-**English:** Most prompt tools make a prompt *sound* better. Prompt Spark makes it **executable**: structured enough for a downstream model to parse, natural enough for a human to read. One core, many entry points — a composer button in dsh, a bottom panel in VS Code/Cursor, `/enhance` in Claude Code, a global hotkey for any app. Nothing is sent automatically.
+**为什么值得使用？** 你可以选择补充多少细节，先审阅和编辑，再决定复制或替换；Prompt Spark 不会自动粘贴或替你发送结果。
 
-**强化速度说明 · Enhancement latency:** 中文：DSH 强化使用当前会话模型路由，不切换供应商；辅助请求默认尝试最低推理档（模型支持时优先 `off`），30 秒超时。若当前 route 返回 Credits exhausted (429)、只输出 reasoning 或迟迟没有正文，请先检查该 route 的可用额度和模型输出。<br>English: DSH enhancement uses the current session model route and never switches providers. It requests the lowest supported reasoning effort (preferring `off`) and times out after 30 seconds. If the route returns Credits exhausted (429), reasoning without text, or no timely response, check that route's credits and output behavior.
+**Why use it?** Choose how much detail you want, review and edit the result, then copy or replace your draft. Prompt Spark does not auto-paste or send the result for you.
 
-## 功能亮点 · Highlights
+<p align="center">
+  <img src="docs/prompt-spark-overview.svg" alt="Prompt Spark 工作流程示意：草稿经过强化成为结构化提示词，再由用户审阅、编辑、复制或替换" width="1200">
+</p>
 
-| | 能力 Capability | 说明 Description |
-| :---: | --- | --- |
-| 🧩 | 机器可解析骨架<br>Machine-readable skeleton | 输出 `Task:`、`Requirements:`、`Acceptance criteria:`、`Constraints:`，详细档再加 `Context:` / `Failure cases:`；纯文本，不是 Markdown 或 JSON。<br>Emits `Task:`, `Requirements:`, `Acceptance criteria:`, `Constraints:`, plus `Context:` / `Failure cases:` at the detailed level. Plain text, not Markdown or JSON. |
-| 🎚️ | 三档详细度<br>Three detail levels | `简洁` 只润色 · `标准` 适度补充结构（默认） · `详细` 展开边界与验收标准。<br>`concise` polishes only · `standard` adds proportional structure (default) · `detailed` expands boundaries and acceptance criteria. |
-| 🗂️ | 项目感知（dsh）<br>Project-aware (dsh) | 从会话工作区读取 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md`、`package.json` 作为参考数据。<br>Reads `AGENTS.md`, `CLAUDE.md`, `README.md`, `README.zh.md` and `package.json` from the session workspace as reference data. |
-| 🎭 | 可复用强化人格<br>Reusable personas | 保存“怎么改写”的方向：产品、工程、写作、极简，跨会话复用。<br>Save *how* prompts should be rewritten — product, engineering, writing, minimal — and reuse them across sessions. |
-| 👀 | 可编辑预览<br>Editable preview | 替换草稿前可全文审阅和修改；五条最近记录、十秒撤销。<br>Review and edit the full result before replacing the draft; five-entry history and ten-second undo. |
-| 🌐 | 跨 harness<br>Cross-harness | 一个本机服务支撑所有适配器，规则只有一套。<br>One local service powers every adapter with a single rule set. |
+## 适合哪些场景 · When it helps
 
-## 各 harness 支持情况 · Harness support
+- **开发与产品需求**：把“帮我做一个导出功能”整理成任务、要求和验收标准，适合交给编码助手继续执行。<br>*Turn a vague feature request into tasks, requirements, and acceptance criteria for a coding assistant.*
+- **写作、分析与日常 AI 指令**：保留原始意图，用简洁、标准或详细三档控制补充程度。<br>*Preserve your intent while choosing concise, standard, or detailed enhancement for writing and analysis.*
+- **跨工具工作**：在不同 AI 工具之间复用同一套强化规则，而不必维护多份提示词模板。<br>*Reuse one rule set across AI tools instead of maintaining separate prompt templates.*
 
-| Harness | 原生输入框按钮<br>Native composer button | 使用方式<br>How it works |
-| --- | :---: | --- |
-| **dsh** | ✅ | 原生 composer 工具栏 —— `强化提示词`<br>Native composer toolbar — `强化提示词` |
-| **VS Code** | ➖ | 底部面板 webview + ✨ 按钮、选中文本命令、`Ctrl+Alt+E`<br>Bottom-panel webview, selection command, `Ctrl+Alt+E` |
-| **Cursor** | ➖ | 与 VS Code 同一个 VSIX<br>Same VSIX as VS Code |
-| **Claude Code** | ➖ | `/enhance` 斜杠命令，可选 `UserPromptSubmit` hook<br>`/enhance` slash command, optional `UserPromptSubmit` hook |
-| **ChatGPT Desktop** | ➖ | Windows 全局热键 + 剪贴板<br>Windows global hotkey + clipboard |
-| **其他任意软件<br>Any other app** | ➖ | 全局热键、CLI 或本机 HTTP API<br>Global hotkey, CLI, or the local HTTP API |
+## 核心特点 · Highlights
 
-> 只有 dsh 能把按钮**放进自己的输入框**；其他 harness 受宿主扩展 API 限制，表格给出的是最接近的等价方案。<br>
-> Only dsh can place a button **inside** its own composer. Other harnesses are limited by their host extension APIs; the table shows the closest equivalent.
+| 能力 · Capability | 它能做什么 · What it does |
+| --- | --- |
+| **结构化，但仍可读**<br>*Structured, still readable* | 默认输出带 `Task:`、`Requirements:`、`Acceptance criteria:`、`Constraints:` 的纯文本；详细档可增加 `Context:` 和 `Failure cases:`。没有真实内容的小节会省略。<br>*Plain-text semantic anchors by default, with optional context and failure cases at the detailed level. Empty sections are omitted.* |
+| **三档详细度**<br>*Three detail levels* | `concise` 轻度润色，`standard` 补充适度结构（默认），`detailed` 展开边界、验收标准与失败情况。<br>*Choose light polishing, proportional structure (default), or expanded boundaries and acceptance criteria.* |
+| **先审阅，再使用**<br>*Review before use* | DSH 支持全文预览和编辑、最近五条记录与十秒撤销；由你决定复制或替换草稿。<br>*DSH provides an editable preview, five recent entries, and ten-second undo. You decide whether to copy or replace.* |
+| **可复用人格与偏好**<br>*Reusable personas & preferences* | 保存产品、工程、写作、极简等改写方向；DSH 还能从手动修改前后的差异中提议可复用偏好，审阅后才保存。<br>*Save rewriting directions and, in DSH, review preferences inferred from your manual edits before anything is stored.* |
+| **项目感知（DSH）**<br>*Project-aware (DSH)* | 可将 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md` 和 `package.json` 作为参考数据，让改写更贴合当前项目。<br>*Use project instruction and metadata files as reference data for more relevant rewrites.* |
+| **一个核心，多个入口**<br>*One core, many entry points* | DSH 直接复用核心；其他适配器连接同一个本机服务，规则集中维护，不在每个客户端重复实现。<br>*DSH uses the core directly; other adapters share one local service and one maintained rule set.* |
+
+## 看看输出长什么样 · Example
+
+下面只演示输出形式，实际结果由草稿和所配置的模型决定。
+
+*This example illustrates the format, not a guaranteed model response. Actual output depends on your draft and configured model.*
+
+**草稿 · Draft**
+
+```text
+帮我做一个导出 CSV 的功能，要能选择导出字段并使用 UTF-8，不要修改现有数据结构。
+```
+
+**标准档示例 · Standard-level example**
+
+```text
+Task: 做一个导出 CSV 的功能。
+Requirements: 1. 可选择导出字段；2. 支持 UTF-8。
+Acceptance criteria: 导出字段与选择一致，文件可正常打开。
+Constraints: 不修改现有数据结构。
+```
+
+标签固定使用英文，作为稳定的机器锚点；标签后的正文跟随用户语言。默认不输出 JSON/YAML/XML，条目数量与原始请求成比例，避免为了“详细”而堆砌内容。
+
+*English labels provide stable machine anchors while the prose follows the user's language. JSON/YAML/XML is not the default, empty sections are omitted, and item counts stay proportional to the request.*
 
 ## 快速开始 · Quick start
 
-### dsh
+### 准备源码与依赖 · Install the source
 
-**中文：** 通过 DSH 插件管理器安装源码目录，然后重启 DSH。写下草稿，点击输入框工具栏的 **强化提示词**，审阅后选择 **替换草稿** 或 **复制**。
+```sh
+git clone https://github.com/Erfan817/prompt-spark.git
+cd prompt-spark
+npm install --ignore-scripts
+```
 
-**English:** Install the source directory through the DSH plugin manager, then restart DSH. Write a draft, click **强化提示词** in the composer toolbar, review, then **替换草稿** or **复制**.
+- **DSH 原生集成**：需要 DSH `>=0.2.2-rc.1`。<br>*The native DSH integration requires DSH `>=0.2.2-rc.1`.*
+- **桌面伴侣、CLI 与其他适配器**：需要 Node.js 22+。<br>*The companion service, CLI, and other adapters require Node.js 22+.*
+- **Windows 全局热键**：需要 Windows 10/11 和 PowerShell 7（`pwsh`）。<br>*The global hotkey requires Windows 10/11 and PowerShell 7 (`pwsh`).*
+
+### DSH：在输入框里直接使用 · Use the native DSH button
+
+1. 通过 DSH 插件管理器安装源码目录，然后重启 DSH。<br>*Install the source directory through the DSH plugin manager, then restart DSH.*
+2. 在输入框写下草稿，点击工具栏的 **强化提示词**。<br>*Write a draft and click **强化提示词** in the composer toolbar.*
+3. 选择详细度，审阅并编辑结果，再选择 **替换草稿** 或 **复制**。<br>*Choose a detail level, review and edit, then select **替换草稿** or **复制**.*
+
+DSH 强化默认使用当前会话选择的 provider/model，不需要启动桌面伴侣，也不会静默切换模型供应商。同时配置 `provider` 和 `model` 可以固定辅助改写路由；未配置时才跟随当前会话。
+
+*By default, DSH enhancement reuses the current session provider/model and does not need the companion service. It never silently switches providers. Set both `provider` and `model` in the plugin configuration to pin a dedicated rewrite route; otherwise, the session route is used.*
+
+### 非 DSH 入口：启动并配置本地服务 · Start and configure the companion
+
+所有非 DSH 适配器都需要本地服务。在仓库根目录运行，并保持终端开启：
+
+*Every non-DSH adapter needs the local companion. Run this from the repository root and keep the terminal open:*
+
+```sh
+npm run desktop
+```
+
+首次使用请在打开的本地窗口中进入 **设置**，确认接口类型、API 基础地址和模型 ID，并填写 API Key；本地无鉴权模型可以不填 Key。Windows 也可以双击 `启动通用窗口.cmd`。服务只监听随机 `127.0.0.1` 回环端口。
+
+*On first use, open **设置** in the local window, confirm the API type, base URL, and model ID, then enter your API Key. A Key is optional for a local model that does not require authentication. On Windows, you can also double-click `启动通用窗口.cmd`. The service binds only to a random `127.0.0.1` loopback port.*
+
+> **macOS / Linux 注意：** 当前服务与部分客户端对 `session.json` 的默认路径存在不一致，macOS 以及设置了自定义 `XDG_CONFIG_HOME` 的 Linux 会受影响。请先查看 [已知限制](#已知限制--known-limitations)；Windows 与使用默认 `~/.config` 的 Linux 路径一致。
+>
+> **macOS / Linux note:** The service and some clients currently disagree on the default `session.json` location. This affects macOS and Linux with a custom `XDG_CONFIG_HOME`; see [Known limitations](#已知限制--known-limitations). Windows and Linux using the default `~/.config` path are consistent.
+
+### VS Code / Cursor：底部面板或快捷键 · Panel or keyboard shortcut
+
+保持本地服务运行，再构建并安装 VSIX：
+
+*Keep the companion running, then build and install the VSIX:*
+
+```sh
+cd vscode-extension
+npx @vscode/vsce package --allow-missing-repository
+
+# 根据所用编辑器二选一 · Choose one
+code --install-extension prompt-spark-vscode-1.0.0.vsix
+cursor --install-extension prompt-spark-vscode-1.0.0.vsix
+```
+
+打开 **提示词强化** 底部面板，输入草稿并点击 **✨ 强化**。也可以选中文字后按 `Ctrl+Alt+E`（macOS：`Cmd+Alt+E`）替换选区，或运行 `Prompt Spark: 输入并强化` 将结果插入光标处。
+
+*Open the **提示词强化** bottom panel, enter a draft, and click **✨ 强化**. Alternatively, select text and press `Ctrl+Alt+E` (`Cmd+Alt+E` on macOS) to replace the selection, or run `Prompt Spark: 输入并强化` to insert at the cursor.*
+
+详细安装、命令与故障排查见 [VS Code / Cursor 指南](vscode-extension/README.md)。<br>*See the [VS Code / Cursor guide](vscode-extension/README.md) for detailed installation, commands, and troubleshooting.*
+
+### Claude Code：`/enhance` 命令 · Slash command
+
+1. 保持 `npm run desktop` 运行。<br>*Keep `npm run desktop` running.*
+2. 将本仓库的 `.claude/commands/enhance.md` 复制到目标项目的 `.claude/commands/enhance.md`，或用户级 `~/.claude/commands/enhance.md`。如果仓库不在命令中登记的默认目录，请修改默认路径，或将 `PROMPT_SPARK_CLI` 设置为 `cli/enhance.mjs` 的绝对路径。<br>*Copy this repository's `.claude/commands/enhance.md` to the target project or your user-level `.claude/commands/` directory. If your checkout differs from the command's registered default path, edit that path or set `PROMPT_SPARK_CLI` to the absolute path of `cli/enhance.mjs`.*
+3. 在 Claude Code 中运行 · *Run in Claude Code*：
+
+```text
+/enhance 帮我做一个导出 CSV 的功能，要能选字段
+```
+
+Claude Code 没有公开的 UI 扩展 API，因此这里使用斜杠命令，而不是注入输入框按钮。可选 `UserPromptSubmit` hook 需显式启用，只能把强化版作为附加上下文，不能替换原文。配置方法见 [Claude Code 指南](claude-code/README.md)。
+
+*Claude Code exposes no public UI extension API, so Prompt Spark uses a slash command rather than injecting a composer button. The optional `UserPromptSubmit` hook is opt-in and can only append the enhanced version as context; it cannot replace your prompt. See the [Claude Code guide](claude-code/README.md).*
+
+### 任意 Windows 应用：全局热键 · Global hotkey for Windows apps
+
+保持本地服务运行，然后执行 · *Keep the companion running, then execute*：
+
+```powershell
+hotkey-tool\start-hotkey.cmd
+```
+
+在目标应用中选中文字，按 `Ctrl+Alt+E`，等待结果写入剪贴板，再自行按 `Ctrl+V`。工具**不会自动粘贴或发送**。热键冲突、参数调整与故障排查见 [全局热键指南](hotkey-tool/README.md)。
+
+*Select text in the target app, press `Ctrl+Alt+E`, wait for the result to reach the clipboard, then press `Ctrl+V` yourself. The tool **never auto-pastes or sends**. See the [hotkey guide](hotkey-tool/README.md) for conflicts, options, and troubleshooting.*
+
+### CLI：管道与脚本 · Pipes and scripts
+
+保持本地服务运行，然后执行 · *Keep the companion running, then execute*：
+
+```sh
+echo "帮我做一个导出 CSV 的功能" | node cli/enhance.mjs --level detailed
+node cli/enhance.mjs --text "..." --context-file AGENTS.md --copy
+```
+
+`stdout` 默认只输出强化后的文本，便于管道组合；`--json` 输出完整结果对象。运行 `node cli/enhance.mjs --help` 可查看全部参数。
+
+*By default, `stdout` contains only the enhanced text for easy piping; `--json` returns the full result object. Run `node cli/enhance.mjs --help` for every option.*
+
+## 工作原理 · How it works
+
+```mermaid
+flowchart LR
+    D[Draft / 草稿] --> A{Adapter / 入口}
+    A -->|DSH| C[prompt-core.js<br/>one shared rule set]
+    A -->|Other adapters| L[Local service<br/>POST /api/enhance]
+    L --> C
+    C --> R[Structured prompt / 结构化提示词]
+    R --> U[Review, edit & use<br/>审阅、编辑、使用]
+```
+
+除 DSH 外，所有适配器都调用同一个本机服务。模型调用与强化规则由服务统一负责，适配器只负责传入文本和带回结果。
+
+*Outside DSH, every adapter talks to the same loopback service. The service owns the model call and reuses `prompt-core.js`; adapters only move text in and out.*
+
+## 进一步了解 · Advanced details
+
+<details>
+<summary><strong>项目感知与偏好学习（DSH） · Project context & learned preferences</strong></summary>
+
+### 项目感知 · Project context
+
+DSH Host 按顺序读取 `AGENTS.md` → `CLAUDE.md` → `README.md` → `README.zh.md` → `package.json`，以**仅参考数据**标记后注入 system 提示词，不写入用户任务消息。
+
+*The DSH host reads those files in the listed order, labels them **reference data only**, and injects them into the system prompt — never into the user's task message.*
+
+| 规则 · Rule | 取值 · Value |
+| --- | --- |
+| 单文件上限 · Per-file limit | 6000 字符 · characters |
+| 总上限 · Total limit | 8000 字符 · characters |
+| 文件缺失或不可读 · Missing/unreadable files | 静默降级为无上下文 · Silently continue without context |
+| 开关 · Toggle | 预览面板「项目感知」/ `useProject` 工具参数 · Preview toggle / tool argument |
+
+### 从编辑中学习 · Learn from edits
+
+首次强化后，手动修改预览或已替换的输入框，再次强化时，系统可以额外调用模型，从两个版本的差异中提议一条改写习惯。你可以编辑建议、选择范围，并明确确认是否保存；取消不会保存，也不会继续强化。选择 **不保存，继续强化** 会保留已有规则并继续本次强化，但不保存新建议。
+
+*Enhance once, edit the preview or replaced composer text, then enhance again. An additional model call can compare the versions and propose a reusable rewriting habit. You can edit the suggestion, choose its scope, and explicitly confirm whether to save it. Cancel neither saves nor continues; **Continue without saving** keeps existing rules and proceeds without storing the new suggestion.*
+
+- **范围 · Scopes**：默认按规范化工作目录保存到项目，也可选择当前会话或当前 DSH 配置档全局；Windows 路径匹配忽略大小写。<br>*Project scope based on the normalized working directory is the default; session and DSH-profile-global scopes are also available. Windows matching is case-insensitive.*
+- **生效方式 · Application**：确认后的方向用于本次及后续适用强化，不改变主助手或其他适配器。<br>*Confirmed directions apply to the immediate retry and later matching enhancements, not the main assistant or other adapters.*
+- **冲突处理 · Conflicts**：不同方向必须由用户选择保留或覆盖。同范围、同键记录可替换；跨范围记录保留，仅在新规则适用处按 ID 覆盖，不会删除其他上下文仍需要的记忆。删除覆盖规则可能恢复被保留的旧方向；之后新保存的规则会重新进行冲突检查。<br>*Every different direction requires a keep/override decision. Same-scope, same-key records may be replaced; cross-scope records are retained and overridden by ID only where the new rule applies. Deleting an override can restore a retained direction, and newly saved rules undergo conflict review again.*
+- **管理 · Management**：面板详情的「已保存偏好」显示生效/被覆盖状态并支持删除；工具可列出或删除，不能代替用户确认学习。<br>*The saved-preferences view shows active/overridden states and supports deletion. Tools can list or delete records but cannot confirm learning for the user.*
+- **边界 · Boundaries**：连续性判断是启发式的。清空、发送、大幅替换草稿或打开历史记录会丢弃基线；基线与建议仅在主机内存保留约 30 分钟。推断会额外消耗 token，保存前应检查任务事实、名称、路径或敏感信息。<br>*Task continuity is heuristic. Clearing, sending, substantially replacing input, or opening history drops the baseline. Baselines and proposals remain in host memory for about 30 minutes. Inference consumes extra tokens; review facts, names, paths, and sensitive data before saving.*
+
+</details>
+
+<details>
+<summary><strong>模型路由与 DSH 配置 · Model routing & DSH configuration</strong></summary>
+
+DSH 强化默认调用当前会话的 provider/model route，辅助请求默认尝试模型支持的最低推理档（优先 `off`），默认 30 秒超时，不会自动切换供应商。同时在配置中设置 `provider` 与 `model` 可固定辅助路由；未固定时才复用会话路由。
+
+*By default, DSH enhancement uses the current session provider/model route. It requests the lowest supported reasoning effort (preferring `off`), times out after 30 seconds, and never switches providers automatically. Configure both `provider` and `model` to pin an auxiliary route; otherwise, the session route is reused.*
+
+如果路由返回 `Credits exhausted (429)`、只输出 reasoning 而没有正文或响应超时，请检查当前路由额度与模型输出行为，或在同一 gateway 中选择其他可用模型。提示词改写本身不能解决账户额度问题。
+
+*If the route returns `Credits exhausted (429)`, reasoning without text, or a timeout, check route credits and model output behavior, or select another available model on the same gateway. Rewriting a prompt cannot resolve an account-credit problem.*
+
+可选配置示例 · *Optional configuration example*：
 
 ```yaml
 - id: prompt-enhancer-plus
@@ -73,125 +252,12 @@
     reasoningEffort: off
 ```
 
-### 桌面伴侣 · Desktop companion
+</details>
 
-**中文：** 所有非 DSH 适配器都需要它。Windows 上也可双击 `启动通用窗口.cmd`；服务只监听随机 `127.0.0.1` 回环端口。
+<details>
+<summary><strong>本机 API 与会话发现 · Local API & session discovery</strong></summary>
 
-**English:** Required by every non-DSH adapter. On Windows you can also double-click `启动通用窗口.cmd`; it listens on a random loopback-only `127.0.0.1` port.
-
-```sh
-npm install --ignore-scripts
-npm run desktop
-```
-
-会话发现文件 · Session discovery file:
-
-```text
-%APPDATA%/prompt-enhancer-plus-local/session.json
-{ "origin": "http://127.0.0.1:<port>", "token": "<bearer token>", "pid": 1234, "version": "1.6.0", "startedAt": "..." }
-```
-
-### VS Code / Cursor
-
-**中文：** 在 Panel 区打开 **提示词强化** 面板，输入草稿、选择详细度，点 **✨ 强化**；选中文字按 `Ctrl+Alt+E` 替换选区；运行 `Prompt Spark: 输入草稿并强化` 在光标处插入结果。
-
-**English:** Open the **提示词强化** panel in the Panel area, type a draft, choose a detail level, click **✨ 强化**. Select text and press `Ctrl+Alt+E` to replace the selection; run `Prompt Spark: 输入草稿并强化` to insert at the cursor.
-
-```sh
-cd vscode-extension
-npx @vscode/vsce package --allow-missing-repository
-code   --install-extension prompt-spark-vscode-1.0.0.vsix
-cursor --install-extension prompt-spark-vscode-1.0.0.vsix
-```
-
-### Claude Code
-
-**中文：** Claude Code 没有 UI 扩展 API，只能使用斜杠命令。复制 `.claude/commands/enhance.md` 到项目或用户级 `.claude/commands/`，然后 `/enhance 帮我做一个导出 CSV 的功能`。
-
-**English:** Claude Code has no UI extension API, so the slash command is the official path. Copy `.claude/commands/enhance.md` to a project or user-level `.claude/commands/`, then run `/enhance 帮我做一个导出 CSV 的功能`.
-
-可选 hook：`claude-code/hooks/user-prompt-submit.mjs` 会把结构化版本作为附加上下文（需 `PROMPT_SPARK_HOOK=1`）；hook 不能替换用户原文，这是平台限制。<br>
-Optional hook: `claude-code/hooks/user-prompt-submit.mjs` appends the structured version as additional context (`PROMPT_SPARK_HOOK=1`). Hooks cannot replace prompt text — a Claude Code limitation.
-
-### 任意软件 · Any app (Windows)
-
-**中文：** 在 ChatGPT 桌面版、Claude 桌面版或任何软件中选中文字，按 `Ctrl+Alt+E`，然后粘贴。工具只把结果写入剪贴板，**绝不自动粘贴**。
-
-**English:** Select text in ChatGPT Desktop, Claude Desktop, or any application, press `Ctrl+Alt+E`, then paste. The tool writes the result to the clipboard and **never auto-pastes**.
-
-```powershell
-hotkey-tool\start-hotkey.cmd
-```
-
-### CLI
-
-**中文：** `stdout` 只输出强化结果，便于管道组合；`--json` 输出完整结果对象。
-
-**English:** `stdout` contains only the enhanced text, so it composes with pipelines. Use `--json` for the full result object.
-
-```sh
-echo "帮我做一个导出 CSV 的功能" | node cli/enhance.mjs --level detailed
-node cli/enhance.mjs --text "..." --context-file AGENTS.md --copy
-```
-
-## 工作原理 · How it works
-
-```mermaid
-flowchart LR
-    D[Your draft] --> C[prompt-core.js<br/>one rule set]
-    C --> S[Structured prompt]
-    S --> A[Any AI assistant]
-
-    subgraph Adapters
-      D1[dsh composer]
-      D2[VS Code / Cursor]
-      D3[Claude Code]
-      D4[Global hotkey / CLI]
-    end
-
-    D1 --> C
-    D2 --> L[Local service<br/>POST /api/enhance]
-    D3 --> L
-    D4 --> L
-    L --> C
-```
-
-**中文：** 除 dsh 外，所有适配器都调用同一个本机服务；模型调用与规则由服务统一负责，适配器只负责把文字送进去、把结果带回来。
-
-**English:** Outside dsh, every adapter talks to the same local service. The service owns the model call and reuses `prompt-core.js`; adapters only move text in and out.
-
-## 输出契约 · Output contract
-
-同一段草稿的三档输出 · The same draft at three levels:
-
-```text
-简洁 / concise
-Task: 做一个导出 CSV 的功能。
-Requirements: 1. 可选择导出字段；2. 支持 UTF-8。
-
-标准 / standard
-Task: 做一个导出 CSV 的功能。
-Requirements: 1. 可选择导出字段；2. 支持 UTF-8。
-Acceptance criteria: 导出文件能在 Excel 中正常打开，字段与选择一致。
-Constraints: 不修改现有数据结构。
-
-详细 / detailed
-Task: 做一个导出 CSV 的功能。
-Context: 现有系统已支持列表筛选，导出需复用筛选结果。
-Requirements: 1. 可选择导出字段；2. 支持 UTF-8；3. 大数据量分批写入。
-Acceptance criteria: 导出文件能在 Excel 中正常打开；字段与选择一致；10 万行内不超时。
-Constraints: 不修改现有数据结构；不新增第三方依赖。
-Failure cases: 无数据时导出空文件并提示；字段全不选时按钮禁用。
-```
-
-**设计规则 · Design rules**
-
-- 标签固定为**英文**，作为稳定的机器锚点，即使正文是中文；标签后的正文跟随用户语言。<br>*Labels stay **English** as stable machine anchors even when the content is Chinese; the prose after each label follows the user's language.*
-- 没有真实内容的小节直接省略，不写空占位。<br>*Sections without real content are omitted — no empty placeholders.*
-- 除非草稿明确要求机器格式，否则不输出 JSON/YAML/XML。<br>*No JSON/YAML/XML unless the draft explicitly requests a machine format.*
-- 条目数量与原文字数成比例，不堆砌。<br>*Item count stays proportional to the source; no padding.*
-
-## 本机 API · Local API
+`npm run desktop` 提供以下接口 · *`npm run desktop` exposes*：
 
 ```text
 POST /api/enhance   { text, mode?, level?, format?, personaId?, direction?, context? }
@@ -199,41 +265,73 @@ POST /api/enhance   { text, mode?, level?, format?, personaId?, direction?, cont
 POST /api/health    → { ok: true, value: { ready: true, version } }
 ```
 
-**中文：** 每个 `/api/*` 请求都必须携带 `Authorization: Bearer <token>`（来自 `session.json`）、与会话一致的 `Origin` 头，以及 `Host: 127.0.0.1:<port>`。不开放 CORS，不监听局域网；`context` 上限 8000 字符，未知 `level` 回退 `standard`。
+每个 `/api/*` 请求都必须携带 · *Every `/api/*` request requires*：
 
-**English:** Every `/api/*` call requires `Authorization: Bearer <token>` from `session.json`, an `Origin` header equal to the session origin, and `Host: 127.0.0.1:<port>`. No CORS, no LAN binding; `context` is capped at 8000 characters and unknown `level` falls back to `standard`.
+- `Authorization: Bearer <token>`，令牌来自 `session.json`；<br>*A bearer token from `session.json`.*
+- 与会话一致的 `Origin`；<br>*An `Origin` matching the session origin.*
+- `Host: 127.0.0.1:<port>`。<br>*The exact loopback `Host` header.*
 
-**中文：** DSH 提示词强化会调用当前会话模型的 `/api/*` route。当前 gateway 返回 Credits exhausted (429) 时，换用其他支持的同一 gateway model；route 恢复前强化会失败，不会自动切换 provider。
+服务不开放 CORS，不监听局域网；`context` 上限 8000 字符，未知 `level` 回退到 `standard`。
 
-**English:** DSH prompt enhancement calls the current session model route. If the gateway returns Credits exhausted (429), select another available model on that same gateway; enhancement can fail until the route recovers, and it will not silently switch providers.
+*The service enables no CORS and does not bind to the LAN. `context` is capped at 8,000 characters, and an unknown `level` falls back to `standard`.*
 
-## 项目感知 · Project-aware (dsh)
+当前服务实际写入路径与客户端默认查找路径如下 · *The current service write path and client lookup paths are*：
 
-**中文：** DSH Host 按顺序读取 `AGENTS.md` → `CLAUDE.md` → `README.md` → `README.zh.md` → `package.json`，注入 system 提示词并标记为**仅参考数据**；任务消息永远不会包含项目上下文。
+| 平台 · Platform | 服务写入 · Service writes | CLI / VS Code / Claude hook 默认查找 · Default client lookup |
+| --- | --- | --- |
+| Windows | `%APPDATA%/prompt-enhancer-plus-local/session.json` | 同左 · Same |
+| macOS | `~/.config/prompt-enhancer-plus-local/session.json` | `~/Library/Application Support/prompt-enhancer-plus-local/session.json` |
+| Linux（默认 · default） | `~/.config/prompt-enhancer-plus-local/session.json` | 同左 · Same |
+| Linux（自定义 · custom `XDG_CONFIG_HOME`） | 仍为 `~/.config/...` · Still `~/.config/...` | `$XDG_CONFIG_HOME/prompt-enhancer-plus-local/session.json` |
 
-**English:** The DSH host reads `AGENTS.md` → `CLAUDE.md` → `README.md` → `README.zh.md` → `package.json` in order, injects them into the system prompt labelled **reference data only**; the task message never receives project context.
+> **已知契约问题：** macOS 与自定义 `XDG_CONFIG_HOME` 的 Linux 路径不一致。CLI 可用 `--session` 显式指定服务实际写入的文件；其他受影响客户端需先统一路径。详见 [已知限制](#已知限制--known-limitations)。
+>
+> **Known contract issue:** These paths differ on macOS and Linux with a custom `XDG_CONFIG_HOME`. The CLI can use `--session` to point at the actual file; other affected clients need their paths aligned first. See [Known limitations](#已知限制--known-limitations).
 
-**中文：** 提示词强化使用当前 DSH 会话所选 provider/model；模型支持时，辅助调用默认选最低推理档（优先 `off`）；默认 30 秒超时。不会切换供应商。若超时，请检查当前路由是否有可用额度、模型是否在生成正文，以及是否过度使用推理。
+会话文件示例 · *Example session file*：
 
-**English:** Prompt enhancement uses the provider/model selected for the current DSH session. When supported, it requests the lowest reasoning effort (preferring `off`) for the auxiliary rewrite and times out after 30 seconds by default. It never switches providers. On timeout, check route credits, whether the model is producing text rather than reasoning only, and whether reasoning effort is unnecessarily high.
+```text
+{ "origin": "http://127.0.0.1:<port>", "token": "<bearer token>", "pid": 1234, "version": "1.6.0", "startedAt": "..." }
+```
 
-| 规则 Rule | 取值 Value |
-| --- | --- |
-| 单文件上限 · Per-file limit | 6000 字符 · characters |
-| 总上限 · Total limit | 8000 字符 · characters |
-| 失败行为 · Failure behaviour | 静默降级为无上下文 · silently degrades to no context |
-| 开关 · Toggle | 预览面板「项目感知」/ `useProject` 工具参数 · Preview panel toggle / `useProject` tool argument |
+`session.json` 包含本机访问令牌，请勿分享。CLI 与 VS Code/Cursor 客户端会拒绝非本机 origin，避免把令牌发送到远端；可选 Claude Code hook 直接使用文件中的 origin，当前没有这项客户端侧回环校验，因此只能使用可信的本机会话文件。
 
-## 编辑中学习偏好 · Learn from edits (DSH)
+*`session.json` contains a local access token — do not share it. The CLI and VS Code/Cursor clients reject non-loopback origins to avoid sending that token remotely. The optional Claude Code hook currently uses the file's origin directly without this client-side check, so only use a trusted local session file.*
 
-**中文：** 首次强化后，在预览中手动修改，或先替换草稿再修改输入框，随后再次强化。系统会额外调用模型，从生成稿与修改稿的差异中提议一条“今后怎么改写”的习惯；你可以编辑建议、选择范围，再明确确认保存。取消不保存也不继续强化；“不保存，继续强化”保留已有规则。模型不应提取任务事实、名称、路径或秘密，确认前仍须人工检查。
+</details>
 
-**English:** Enhance once, manually edit the preview (or apply it and edit the composer), then enhance again. An additional model call compares the generated and edited versions and proposes a reusable rewriting habit. Edit the suggestion, choose its scope, and explicitly confirm to save. Cancel neither saves nor continues; continuing without saving keeps existing rules. Inference excludes task facts, names, paths and secrets, but you must review the suggestion.
+## 各入口的支持范围 · Harness support
 
-- **范围 · Scopes:** 默认项目，按会话当前工作目录规范化匹配（Windows 忽略大小写）；也可选择当前会话或当前 DSH 配置档全局。确认后的当前强化和后续适用强化均使用已保存方向；它们不改变主助手或其他适配器。<br>*Project by normalized current working directory is the default (case-insensitive on Windows); session and profile-global scopes are also available. Saved directions apply to the immediate retry and subsequent matching enhancements, not the main assistant or other adapters.*
-- **冲突 · Conflicts:** 保守地将所有不同方向视为可能冲突，必须选择保留或覆盖。仅同范围、同项目/会话键的旧规则会被替换；其他范围保留，通过规则 ID 在新规则适用的上下文内覆盖。项目或会话覆盖不会删除其他项目/会话所需的全局或项目记忆。删除覆盖规则可能恢复保留方向；之后新保存的规则会重新进入冲突检查。<br>*Every different direction is conservatively treated as a possible conflict and requires a keep/override decision. Only records with the same scope and context key are replaced. Cross-scope records are retained and overridden by rule ID only where the new rule applies. Project/session overrides never delete broader memories needed elsewhere. Deleting an override can restore retained directions; newly saved rules undergo conflict review again.*
-- **管理 · Management:** 面板详情中的“已保存偏好”列出适用规则及生效/被覆盖状态，可删除；工具 `prompt_enhancer` 可 `list-preferences` / `delete-preference`，使用返回的 `revision`。推断及确认仅用户界面可执行，工具不能确认学习。<br>*Saved preferences in panel details lists applicable rules, active/overridden status, and deletion controls. The tool supports `list-preferences` / `delete-preference` using the returned revision; inference and confirmation remain UI-only.*
-- **边界 · Boundaries:** 清空、发送、大幅替换输入或打开历史记录不会沿用旧学习基线。文本连续性是启发式判断，不能保证识别所有新任务；不确定时取消建议。基线与建议仅在主机内存保留约 30 分钟，重启或工作目录变化后需重新强化。并发保存以版本检查拒绝旧修改。<br>*Clearing, sending, substantially replacing input or opening history drops the learning baseline. Text continuity is heuristic, not a guarantee of task identity; cancel irrelevant proposals. Baselines/proposals stay in host memory for about 30 minutes; restart or workspace changes require a fresh enhancement. Revision checks reject stale concurrent saves.*
+| 入口 · Harness | 使用方式 · How it works | 原生输入框按钮 · Native composer button |
+| --- | --- | :---: |
+| **DSH** | Composer 工具栏的 **强化提示词**<br>*Native composer toolbar button* | ✅ |
+| **VS Code** | 底部面板、选中文本命令、`Ctrl+Alt+E` / `Cmd+Alt+E`<br>*Bottom panel, selection command, keyboard shortcut* | ➖ |
+| **Cursor** | 与 VS Code 共用同一个 VSIX<br>*Uses the same VSIX as VS Code* | ➖ |
+| **Claude Code** | `/enhance`，或可选 `UserPromptSubmit` hook<br>*Slash command or optional hook* | ➖ |
+| **其他 Windows 应用 · Other Windows apps** | 全局热键与剪贴板<br>*Global hotkey and clipboard* | ➖ |
+| **脚本与终端 · Scripts & terminals** | CLI 或本机 HTTP API<br>*CLI or local HTTP API* | ➖ |
+
+只有 DSH 能把按钮放进自己的原生输入框；其他入口受宿主 API 限制，采用面板、命令或热键等等价方案。
+
+*Only DSH can place the button inside its native composer. Host API limitations require panel, command, or hotkey equivalents elsewhere.*
+
+## 隐私与安全 · Privacy
+
+- 不读取其他软件的输入框、剪贴板历史、凭据或登录信息。Windows 热键只在你触发时复制当前选区；选区为空时会使用当前剪贴板文本。<br>*No other app's composer, clipboard history, credentials, or login is read. The Windows hotkey copies the current selection only when triggered; if the selection is empty, it uses the current clipboard text.*
+- DSH、面板和 CLI 只有你明确触发强化时，才把草稿与方向发送给你配置的模型 API；Claude Code 自动附加 hook 默认关闭，需主动启用。<br>*DSH, panels, and the CLI send your draft and directions to your configured model API only when you explicitly enhance. Claude Code's automatic-context hook is off by default and must be enabled.*
+- 本机服务只监听回环地址，严格校验 `Host` / `Origin`，并使用随机 Bearer 令牌。<br>*The local service binds to loopback only, validates `Host` / `Origin`, and uses a random bearer token.*
+- 桌面伴侣保存模型配置和你明确填写的方向，不保存任务历史。<br>*The companion stores model configuration and explicitly authored directions, not task history.*
+- 浏览器模式下 Key 只保留在进程内存；可选 Electron 入口可使用系统安全存储，并拒绝明文回退。<br>*Keys remain in process memory in browser mode. The optional Electron entry can use OS secure storage and refuses plaintext fallback.*
+
+## 已知限制 · Known limitations
+
+- **macOS / Linux 会话路径**：当前服务在 macOS 写入 `~/.config/prompt-enhancer-plus-local/session.json`，而 CLI、VS Code/Cursor 与 Claude hook 默认查找 `~/Library/Application Support/...`；Linux 设置自定义 `XDG_CONFIG_HOME` 时也存在类似差异。Windows 与默认 Linux 路径一致。macOS/Linux CLI 可显式使用 `--session "$HOME/.config/prompt-enhancer-plus-local/session.json"`；其他受影响客户端需先统一路径。<br>*On macOS, the service writes under `~/.config`, while clients look under `~/Library/Application Support`; a custom Linux `XDG_CONFIG_HOME` causes a similar mismatch. Windows and default Linux paths agree. The CLI accepts an explicit `--session` path; other affected clients need the path contract aligned first.*
+- **Claude hook 的 origin 校验**：hook 直接读取 `session.json` 中的 origin 并附带 Bearer token，没有 CLI/VS Code 的客户端侧回环校验。不要分享或替换该文件，只使用由可信本机服务生成的会话文件。<br>*The hook uses the session file's origin and bearer token directly, without the CLI/VS Code client-side loopback check. Do not share or replace this file; use only one generated by a trusted local service.*
+- **VS Code 分发与界面边界**：扩展以本地构建的 VSIX 分发，未发布到 Marketplace；也不能向 Copilot、Cursor Chat 等其他扩展的输入框注入按钮。<br>*The VS Code extension is distributed as a locally built VSIX, not through the Marketplace, and cannot inject buttons into other extensions such as Copilot or Cursor Chat.*
+- **Windows 热键**：需要 PowerShell 7，并通过命令行参数传递选区；极长选文可能触及 Windows 参数长度限制，超长草稿请通过 CLI stdin 输入。<br>*PowerShell 7 is required. Selections are passed as command-line arguments, so very long selections can hit Windows limits; use CLI stdin for long drafts.*
+- **Claude Code hook**：只能附加上下文，不能替换提交的原文。<br>*The hook can append context but cannot replace the submitted prompt.*
+- **输出约束**：结构化输出由生成指令约束，不是确定性解析器，模型仍可能偶尔偏离。<br>*Structured output is guided by generation instructions, not a deterministic parser, so models may occasionally deviate.*
+- **可选 Electron 入口**：当前工作副本仍以 `0x80000003` 失败；默认 `npm run desktop` 不依赖 Electron。<br>*The optional Electron entry still fails with `0x80000003` in this working copy; the default `npm run desktop` path does not require Electron.*
 
 ## 开发与测试 · Development
 
@@ -244,40 +342,16 @@ npm run desktop:smoke
 npm pack --dry-run
 ```
 
-`npm test` 共十套测试，不需要 Electron，也不调用真实模型。<br>
-`npm test` runs ten suites without Electron and without calling a real model.
+`npm test` 运行十套测试，不需要 Electron，也不调用真实模型，覆盖核心规则、DSH Host/Client、人格与偏好、项目上下文、本机 API 与安全、桌面 UI、VS Code 客户端和 CLI。
 
-| 测试 Suite | 覆盖内容 Covers |
-| --- | --- |
-| `test-core` | 规则、三档、符号保真 · rules, levels, symbol preservation |
-| `test-host` | DSH Host / Tool 兼容 · host/tool compatibility |
-| `test-personas` | 人格持久化与冲突 · persona persistence and conflicts |
-| `test-preferences` | 偏好确认、范围隔离、覆盖与并发 · preference confirmation, scope isolation, overrides and concurrency |
-| `test-client` | 客户端状态机 · client state machine |
-| `test-features` | 项目上下文与三档 · project context and three levels |
-| `desktop/test-server` | 本机 API 安全与契约 · loopback API security and contract |
-| `desktop/test-desktop` | 桌面 UI 逻辑 · desktop UI logic |
-| `vscode-extension/test-client` | VS Code 客户端契约 · VS Code client contract |
-| `hotkey-tool/test-cli` | CLI 与发现文件 · CLI and discovery file |
+*`npm test` runs ten suites without Electron or real model calls. Coverage includes core rules, DSH Host/Client, personas and preferences, project context, local API security, desktop UI logic, the VS Code client, and the CLI.*
 
-## 隐私 · Privacy
+当前工作副本尚未完成真实 VS Code/Cursor 窗口、实际全局热键及 Claude Code 命令执行的视觉或端到端验证。版本变更见 [1.7.0 发布说明](docs/release-1.7.0.md)。
 
-- 不读取其他软件的输入框、剪贴板历史、凭据或登录信息。<br>*No other application's composer, clipboard history, credentials, or login is read.*
-- 只有你明确点击**强化**时，才会把草稿和方向发送给你配置的模型 API。<br>*Only an explicit enhance action sends the draft and directions to the model API you configured.*
-- 本机服务只监听回环地址，严格校验 `Host` / `Origin`，并使用随机 Bearer 令牌。<br>*The local service binds to loopback only, checks exact `Host`/`Origin`, and uses a random bearer token.*
-- 桌面伴侣只保存模型配置和你明确填写的方向，不保存任务历史。<br>*The desktop companion stores model configuration and explicitly authored directions — not task history.*
-- 浏览器模式下 Key 只保留在进程内存；可选 Electron 入口可使用系统安全存储，并拒绝明文回退。<br>*Keys stay in process memory in browser mode; the optional Electron entry can use OS secure storage and refuses plaintext fallback.*
-
-## 已知限制 · Known limitations
-
-- 只有 dsh 能把按钮放进原生输入框；其他集成都属于面板/命令/热键的等价方案。<br>*Only dsh can put a button inside its native composer; the other integrations are panel/command/hotkey equivalents.*
-- VS Code 扩展以本地构建的 VSIX 分发，未发布到 Marketplace。<br>*The VS Code extension is built locally as a VSIX; it is not published to the Marketplace.*
-- DSH 的提示词强化复用当前会话模型，默认将辅助改写的推理强度设为 `off`（模型支持时），默认超时 30 秒。若当前路由额度不足、响应慢或不返回正文，会明确提示模型路由和超时，不会偷偷切换供应商。<br>*DSH prompt enhancement uses the current session model, defaults auxiliary reasoning to `off` when supported, and times out after 30 seconds. If the route is out of credits, slow, or returns no text, it reports the route and timeout clearly; it never silently switches providers.*
-- Windows 热键工具需要 PowerShell 7，且把选区作为命令行参数传递，极长选文可能触及 Windows 参数长度限制；超长草稿请用 CLI 走 stdin。<br>*The Windows hotkey tool requires PowerShell 7 and passes the selection as a command-line argument, so extremely long selections can hit the Windows argument limit — use the CLI with stdin for very long drafts.*
-- Claude Code 的 hook 只能附加上下文，不能替换提交的原文。<br>*The Claude Code hook can add context but cannot replace the submitted prompt.*
-- 结构化输出由生成指令约束，不是确定性解析器；模型仍可能偶尔偏离。<br>*Structured output is enforced by generation instructions, not a deterministic parser; a model may occasionally deviate.*
-- 本次工作区未做视觉验证：真实 VS Code / Cursor 窗口、真实按下的全局热键、Claude Code 命令执行。Electron 入口仍以 `0x80000003` 失败。<br>*Not visually verified in this working copy: real VS Code/Cursor windows, a real pressed global hotkey, Claude Code slash-command execution. The Electron entry still fails natively with `0x80000003`.*
+*This working copy has not completed visual or end-to-end verification in real VS Code/Cursor windows, with a physically triggered global hotkey, or through Claude Code command execution. See the [1.7.0 release notes](docs/release-1.7.0.md) for version changes.*
 
 ## 许可证 · License
 
-MIT © Erfan817
+[MIT](LICENSE) © Erfan817
+
+发现问题或有改进建议？请通过 [GitHub Issues](https://github.com/Erfan817/prompt-spark/issues) 反馈。<br>*Found a problem or have a suggestion? Please use [GitHub Issues](https://github.com/Erfan817/prompt-spark/issues).*
