@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-enhancer-plus",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "description": "Structured prompt enhancement for DSH plus thin adapters for VS Code, Cursor, Claude Code and any app via a local companion service and global hotkey.",
   "type": "module",
   "main": "index.js",
