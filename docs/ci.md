@@ -14,8 +14,11 @@ GitHub Actions 工作流：`.github/workflows/ci.yml`。
 
 | 任务 | 环境与检查 |
 | --- | --- |
-| Regression | Ubuntu / Windows × Node 22 / 24，运行 `npm test`、原生规则及品牌资源一致性检查、不打开浏览器的服务 smoke test、npm 打包内容检查 |
+| Regression | Ubuntu / Windows × Node 22 / 24，运行 `npm test`（包括 Codex 插件包、共享规则、MCP 传输和模拟宿主面板交互检查）、原生规则及品牌资源一致性检查、不打开浏览器的服务 smoke test、npm 打包内容检查 |
 | Native plugin | Windows + Node 24，安装固定的 `@anthropic-ai/claude-code@2.1.319`，运行 `claude:validate` 和 `claude:test` |
+
+Windows Regression 还会编译 Codex 悬浮组件并检查预览、关闭再开、编辑保留和
+撤销保护状态，不需要安装 Codex，不连接模型，也不读写其他应用的输入框。
 
 原生测试引擎版本取自已经通过本地插件测试的 CLI 版本，并已确认 npm 存在该版本。它仍需在首次 GitHub runner 上确认；若云端发行版不支持 function hooks，任务会明确失败，不会跳过后假报成功。不自动更新为 latest，不使用 `continue-on-error`。
 

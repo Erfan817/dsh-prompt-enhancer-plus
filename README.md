@@ -25,9 +25,9 @@
 
 ---
 
-**Prompt Spark 是什么？** 它是一套开源提示词强化工具：DSH 提供原生输入框按钮；兼容构建的 Claude Code 使用原生 function hooks 插件，无需本机服务；旧适配器通过本地服务连接 VS Code、Cursor、CLI 和其他 Windows 应用。它会把草稿整理为包含任务、要求、验收标准和约束的可读文本，减少后续补充背景与边界的沟通。
+**Prompt Spark 是什么？** 它是一套开源提示词强化工具：DSH 提供原生输入框按钮；兼容构建的 Claude Code 使用原生 function hooks 插件；Codex 桌面插件提供编辑面板、强化预览和放入输入框；旧适配器通过本地伴侣服务连接 VS Code、Cursor、CLI 和其他 Windows 应用。它会把草稿整理为包含任务、要求、验收标准和约束的可读文本，减少后续补充背景与边界的沟通。
 
-**What is Prompt Spark?** It is an open-source prompt enhancement tool with a native DSH composer button, a local companion service, and thin adapters for VS Code, Cursor, Claude Code, a CLI, and other Windows apps. It turns a rough draft into readable tasks, requirements, acceptance criteria, and constraints, so you spend less time adding missing context and boundaries later.
+**What is Prompt Spark?** It is an open-source prompt enhancement tool with a native DSH composer button, a Claude Code function-hooks plugin, a Codex desktop editor plugin, and local-service adapters for VS Code, Cursor, a CLI, and other Windows apps. It turns a rough draft into readable tasks, requirements, acceptance criteria, and constraints, so you spend less time adding missing context and boundaries later.
 
 **为什么值得使用？** 你可以选择补充多少细节，先审阅和编辑，再决定复制或替换；Prompt Spark 不会自动粘贴或替你发送结果。
 
@@ -166,6 +166,16 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 旧命令仍依赖本机服务，不是新原生插件的前置条件。可选传统 `UserPromptSubmit` hook 需显式启用，只能追加上下文，不能替换原文；不要与原生 function hooks 混淆。配置方法见 [Claude Code 指南](claude-code/README.md)。
 
 *The legacy command still requires the companion. Classic UserPromptSubmit hooks append context; the new native plugin uses a separate function-hooks API for UI and draft access.*
+
+### Codex：桌面编辑面板 · Desktop editor plugin
+
+需要输入框附近的按钮时，使用独立的 [Windows 悬浮组件](codex/overlay/README.md)：双击 `codex/overlay/start.vbs`，在 Codex 输入框左端上方显示 **✦ 强化 / 预览**，支持草稿读取、审阅后替换和撤销；退出时右键按钮。它与下面的插件面板是两个入口。
+
+[`codex/plugin`](codex/README.md) 提供桌面插件：草稿编辑、三档选择、强化预览、再次强化、复制和放入输入框。使用当前对话模型，桌面应用自动启动附带的本地 MCP 进程；需要 Node.js 22+，无需安装 Codex CLI、手动启动桌面伴侣或额外 API Key。
+
+在 Codex 桌面应用中打开本仓库项目，完整重启应用，在 **Plugins / 插件 → Prompt Spark 本地来源** 安装。新建对话后选择插件，输入“打开 Prompt Spark 提示词编辑面板”。点击强化会发送一次改写请求；“放入输入框”只追加结果，不发送、不覆盖已有草稿。详细步骤及验证边界见 [Codex 桌面指南](codex/README.md)。
+
+*Install from the desktop plugin directory and ask to open the editor. The panel offers editable previews and explicit composer insertion without sending. Enhancement uses the current conversation model; a bundled local MCP process provides the UI. Unsent composer drafts cannot be read or replaced.*
 
 ### 任意 Windows 应用：全局热键 · Global hotkey for Windows apps
 
@@ -326,12 +336,13 @@ POST /api/health    → { ok: true, value: { ready: true, version } }
 | **VS Code** | 底部面板、选中文本命令、`Ctrl+Alt+E` / `Cmd+Alt+E`<br>*Bottom panel, selection command, keyboard shortcut* | ➖ |
 | **Cursor** | 与 VS Code 共用同一个 VSIX<br>*Uses the same VSIX as VS Code* | ➖ |
 | **Claude Code** | 原生 function hooks 插件：输入区上方按钮、预览与回填；旧命令可选<br>*Native plugin on compatible builds; legacy command optional* | ✅ 输入区上方，需兼容构建 |
+| **Codex 桌面版** | 内嵌编辑面板、三档强化、预览和追加到输入框<br>*Desktop editor panel with preview and explicit composer insertion* | ➖ 面板按钮 |
 | **其他 Windows 应用 · Other Windows apps** | 全局热键与剪贴板<br>*Global hotkey and clipboard* | ➖ |
 | **脚本与终端 · Scripts & terminals** | CLI 或本机 HTTP API<br>*CLI or local HTTP API* | ➖ |
 
-DSH 使用 Composer 插槽；Claude Code 原生插件使用兼容构建的 `AbovePrompt` 和草稿读写接口，不做 DOM 注入。其他入口仍使用面板、命令或热键。Codex 原生适配尚未实现。
+DSH 使用 Composer 插槽；Claude Code 原生插件使用兼容构建的 `AbovePrompt` 和草稿读写接口，不做 DOM 注入。Codex 使用 MCP Apps 内嵌面板，支持在宿主允许时追加文本到输入框，但不能读取或替换原草稿；其他入口使用面板、命令或热键。
 
-*DSH uses composer slots; the native Claude Code plugin uses supported function-hooks UI and draft APIs, not DOM injection. Other adapters use panels, commands or hotkeys. A native Codex adapter is not implemented.*
+*DSH uses composer slots; native Claude Code uses compatible function-hooks UI and draft APIs. Codex uses an embedded MCP Apps panel with explicit draft insertion where supported, without reading or replacing existing composer text.*
 
 ## 隐私与安全 · Privacy
 

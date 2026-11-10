@@ -8,7 +8,7 @@
 
 大多数提示词工具只是让提示词“读起来更顺”。Prompt Spark 追求的是**可执行**：结果既结构化到下游模型能稳定解析，又自然到人可以直接阅读。
 
-一个核心，多个入口：DeepSeek Harness 的原生输入框按钮、兼容构建的 Claude Code 原生插件（输入区按钮、预览和回填）、VS Code / Cursor 的底部面板，以及任意软件的全局热键。不会自动发送任何内容。
+一个核心，多个入口：DeepSeek Harness 的原生输入框按钮、兼容构建的 Claude Code 原生插件（输入区按钮、预览和回填）、Codex 的桌面编辑面板、VS Code / Cursor 的底部面板，以及任意软件的全局热键。不会自动发送强化结果。
 
 ### 功能亮点
 
@@ -62,6 +62,12 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 原生插件 0.2.0 增加本机文字编辑 Skill 的自动匹配/手选，以及「再次强化预览」。参考内容会发送给当前模型，不执行 Skill 脚本；失败或取消保留预览，原草稿变化后不可覆盖。
 
 旧 `/enhance` 命令和可选 `UserPromptSubmit` hook 保留兼容，仍依赖本机服务；传统 hook 只能追加上下文，不能替换原文。
+
+#### Codex
+
+可安装的 [`codex/plugin`](codex/README.md) 提供桌面编辑面板和三档强化。打开本仓库项目并完整重启桌面应用，在 **Plugins / 插件 → Prompt Spark 本地来源** 安装，新建对话后输入“打开 Prompt Spark 提示词编辑面板”。需要 Node.js 22+，无需安装 Codex CLI、手动启动桌面伴侣或额外 API Key。
+
+面板支持编辑草稿、三档选择、可编辑预览、再次强化、复制和放入输入框。点击强化会明确发送一次改写请求；放入输入框只追加结果，不发送、不覆盖已有草稿。支持指定项目资料和 Skill 参考，遵循当前对话的上下文和存储策略。实际桌面端到端验收范围见 [Codex 指南](codex/README.md)。
 
 #### 任意软件（Windows）
 
