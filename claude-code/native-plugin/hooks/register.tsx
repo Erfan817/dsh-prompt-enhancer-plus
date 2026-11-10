@@ -263,26 +263,62 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const s = await read($, preview)
     const { Box, Text, Button, Input, Select } = $.ui.resolve(e)
-    return <Box flexDirection="column" width="100%" alignItems="stretch" gap="md">
-      <Box alignItems="center" justifyContent="space-between" flexWrap="wrap" gap="sm">
-        {s.phase !== 'busy' && <Select key="level" label="详细度" value={s.level} options={levels}
-          onSelect={value => update($, preview, current => ({ ...current, level: value as Level }))} />}
-        {s.phase === 'busy'
-          ? <Box alignItems="center" gap="sm"><Text>正在强化…</Text><Button key="cancel" label="取消" onPress={() => cancel($)} /></Box>
-          : <Button key="generate" label={s.enhanced ? '重新强化' : '强化当前草稿'} onPress={() => enhance($)} />}
+    const narrow = e.props.bodyColumns < 56
+    const editorRows = Math.max(8, Math.min(20, e.props.scroll.bodyRows - 18))
+    return <Box key="preview-layout" flexDirection="column" width="100%" alignItems="stretch" gap="lg">
+      <Box key="preview-header" flexDirection="column" alignItems="stretch" gap="sm">
+        <Box alignItems="center" justifyContent="space-between" flexWrap="wrap" gap="xs">
+          <Text size="heading" weight="semibold">提示词预览</Text>
+          <Text size="caption" dimColor>{s.phase === 'busy' ? '正在强化…' : s.enhanced ? '可编辑' : '等待草稿'}</Text>
+        </Box>
+        <Box key="preview-toolbar" flexDirection={narrow ? 'column' : 'row'} alignItems={narrow ? 'stretch' : 'center'}
+          justifyContent="space-between" gap="sm">
+          {s.phase !== 'busy' && <Select key="level" label="详细度" value={s.level} options={levels}
+            onSelect={value => update($, preview, current => ({ ...current, level: value as Level }))} />}
+          {s.phase === 'busy'
+            ? <Button key="cancel" label="取消强化" variant="secondary" onPress={() => cancel($)} />
+            : <Button key="generate" label={s.enhanced ? '重新强化' : '强化当前草稿'} variant={s.enhanced ? 'secondary' : 'primary'} onPress={() => enhance($)} />}
+        </Box>
       </Box>
-      <Box flexDirection="column" gap="xs">
-        <Button key="skills" plain label={s.showSkills ? '收起参考 Skill' : '参考 Skill'}
-          onPress={() => update($, preview, current => ({ ...current, showSkills: !current.showSkills }))} />
-        {s.showSkills && <Box flexDirection="column" gap="xs">
-          <Text dimColor>仅参考文字编辑类 Skill，不执行脚本；最多选 3 个。参考正文会发给当前模型。</Text>
+      {!!s.error && <Box key="preview-error" flexDirection="column" gap="xs">
+        <Text color="error" weight="medium">强化未完成</Text>
+        <Text color="error" size="footnote">{s.error}</Text>
+      </Box>}
+      {!!s.enhanced ? <Box key="preview-result" flexDirection="column" width="100%" alignItems="stretch" gap="sm">
+        <Box flexDirection={narrow ? 'column' : 'row'} alignItems={narrow ? 'flex-start' : 'center'} justifyContent="space-between" gap="xs">
+          <Text weight="semibold">强化结果</Text>
+          {s.phase !== 'busy' && <Button key="iterate" plain dimColor label="再次强化预览" onPress={() => enhance($, true)} />}
+        </Box>
+        <Box key="editor" flexDirection="column" width="100%" alignItems="stretch">
+          <Input key="enhanced" rows={editorRows} value={s.enhanced} submitLabel="保存预览"
+            onInput={value => update($, preview, current => ({ ...current, enhanced: value }))}
+            onSubmit={value => update($, preview, current => ({ ...current, enhanced: value }))} />
+        </Box>
+        <Text size="footnote" dimColor>直接编辑结果，确认后替换草稿。不会自动发送。</Text>
+        {!!s.usedSkills.length && <Text size="caption" dimColor>本次参考：{s.usedSkills.join('、')}</Text>}
+        {s.skillWarnings.map(warning => <Text size="footnote" color="warning">{warning}</Text>)}
+        {s.stale && <Text size="footnote" color="warning">原草稿已改变或结果已应用。请复制结果，或重新强化。</Text>}
+      </Box> : s.phase !== 'busy' && !s.error && <Box key="preview-empty" flexDirection="column" gap="xs" paddingY="md">
+        <Text weight="medium">先在主输入框写下草稿</Text>
+        <Text size="footnote" dimColor>点击「强化当前草稿」生成结果，再在这里审阅和编辑。</Text>
+      </Box>}
+      <Box key="preview-skills" flexDirection="column" alignItems="stretch" gap="sm">
+        <Box alignItems="center" flexWrap="wrap" gap="xs">
+          <Button key="skills" plain dimColor label={s.showSkills ? '收起参考 Skill' : '参考 Skill'}
+            onPress={() => update($, preview, current => ({ ...current, showSkills: !current.showSkills }))} />
+          <Text size="caption" dimColor>{!s.useSkills ? '已关闭' : s.skillNames === null ? '自动匹配' : `已选 ${s.skillNames.length}/3`}</Text>
+        </Box>
+        {s.showSkills && <Box flexDirection="column" alignItems="stretch" gap="sm">
+          <Text size="footnote" dimColor>最多参考 3 个文字编辑 Skill，正文随强化请求发送，不执行脚本。</Text>
           <Select key="skills-mode" label="参考方式" value={!s.useSkills ? 'off' : s.skillNames === null ? 'auto' : 'manual'}
             options={[{ value: 'off', label: '关闭' }, { value: 'auto', label: '自动匹配' }, { value: 'manual', label: '手动选择' }]}
             onSelect={value => update($, preview, current => ({ ...current, useSkills: value !== 'off', skillNames: value === 'manual' ? current.skillNames ?? [] : null }))} />
-          <Button key="refresh-skills" label={s.skillsLoading ? '正在扫描…' : '刷新本机 Skill'} onPress={() => refreshSkills($)} />
-          <Text dimColor>{s.catalog ? `发现 ${s.catalog.entries.length} 个文字编辑 Skill（${s.catalog.status}）` : '尚未扫描；首次强化或刷新时按需发现。'}</Text>
-          {(s.catalog?.entries ?? []).map(skill => <Box flexDirection="column" gap="xs">
-            <Button key={`skill-${skill.name}`} plain label={`${s.skillNames?.includes(skill.name) ? '✓ ' : ''}${skill.name}`}
+          <Box flexDirection={narrow ? 'column' : 'row'} alignItems={narrow ? 'flex-start' : 'center'} flexWrap="wrap" gap="xs">
+            <Button key="refresh-skills" plain dimColor label={s.skillsLoading ? '正在扫描…' : '刷新本机 Skill'} onPress={() => refreshSkills($)} />
+            <Text size="caption" dimColor>{s.catalog ? `发现 ${s.catalog.entries.length} 个 · ${s.catalog.status === 'ready' ? '扫描完成' : s.catalog.status === 'partial' ? '部分可用' : '暂不可用'}` : '首次强化或刷新时扫描'}</Text>
+          </Box>
+          {(s.catalog?.entries ?? []).map(skill => <Box key={`skill-row-${skill.name}`} flexDirection="column" gap="xs">
+            <Button key={`skill-${skill.name}`} plain dimColor={!s.skillNames?.includes(skill.name)} label={`${s.skillNames?.includes(skill.name) ? '✓ ' : ''}${skill.name}`}
               onPress={async () => {
                 if (active) return
                 await update($, preview, current => {
@@ -290,37 +326,27 @@ export const register: Register = on => {
                   return { ...current, useSkills: true, skillNames: names.includes(skill.name) ? names.filter(n => n !== skill.name) : names.length < 3 ? [...names, skill.name] : names }
                 })
               }} />
-            <Text dimColor>{skill.description}</Text><Text dimColor>{skill.source}: {skill.path}</Text>
+            <Text size="footnote" dimColor>{skill.description}</Text><Text size="caption" color="subtle">{skill.source}: {skill.path}</Text>
           </Box>)}
-          {(s.catalog?.diagnostics ?? []).filter(d => d.status !== 'missing').map(d => <Text dimColor>{d.path}: {d.status}（{d.count}）</Text>)}
+          {(s.catalog?.diagnostics ?? []).filter(d => d.status !== 'missing').map(d => <Text size="caption" dimColor>{d.path}: {d.status}（{d.count}）</Text>)}
         </Box>}
       </Box>
-      {!!s.usedSkills.length && <Text dimColor>本次参考：{s.usedSkills.join('、')}</Text>}
-      {s.skillWarnings.map(warning => <Text dimColor>{warning}</Text>)}
-      {!!s.error && <Text>{s.error}</Text>}
-      {!!s.enhanced ? <Box flexDirection="column" width="100%" alignItems="stretch" gap="xs">
-        <Text bold>强化结果</Text>
-        <Box key="editor" flexDirection="column" width="100%" alignItems="stretch">
-          <Input key="enhanced" rows={16} value={s.enhanced} submitLabel="保存预览"
-            onInput={value => update($, preview, current => ({ ...current, enhanced: value }))}
-            onSubmit={value => update($, preview, current => ({ ...current, enhanced: value }))} />
-        </Box>
-        <Text dimColor>可以直接编辑，确认后替换。不会自动发送。</Text>
-        {s.phase !== 'busy' && <Button key="iterate" label="再次强化预览" onPress={() => enhance($, true)} />}
-        {s.stale && <Text>原草稿已改变或结果已应用。请复制结果，或重新强化。</Text>}
-      </Box> : s.phase !== 'busy' && !s.error && <Text dimColor>在主输入框写下草稿，再点击强化。生成后可在这里编辑。</Text>}
-      {!!s.original && <Box flexDirection="column" gap="xs">
-        <Button key="toggle-original" plain label={s.showOriginal ? '收起原草稿' : '查看原草稿'}
+      {!!s.original && <Box key="preview-original" flexDirection="column" alignItems="stretch" gap="sm">
+        <Button key="toggle-original" plain dimColor label={s.showOriginal ? '收起原草稿' : '查看原草稿'}
           onPress={() => update($, preview, current => ({ ...current, showOriginal: !current.showOriginal }))} />
-        {s.showOriginal && <Text dimColor>{s.original}</Text>}
+        {s.showOriginal && <Text size="footnote" dimColor>{s.original}</Text>}
       </Box>}
-      <Box key="actions" alignItems="center" flexWrap="wrap" gap="sm">
-        {!!s.enhanced && !s.stale && s.phase === 'preview' && <Button key="apply" label="替换草稿" variant="primary" onPress={() => apply($)} />}
-        {!!s.enhanced && <Button key="copy" label="复制" onPress={press => copy($, press.surface)} />}
-        {s.undo && <Button key="undo" label="撤销替换" onPress={() => undo($)} />}
-        <Button key="close" label="关闭" plain onPress={async () => { await cancel($); await $.ui.close({ id: PANE }) }} />
+      <Box key="preview-footer" flexDirection="column" alignItems="stretch" gap="sm">
+        <Box key="actions" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap="sm">
+          <Box key="result-actions" alignItems="center" flexWrap="wrap" gap="xs">
+            {!!s.enhanced && !s.stale && s.phase === 'preview' && <Button key="apply" label="替换草稿" variant="primary" onPress={() => apply($)} />}
+            {!!s.enhanced && <Button key="copy" label="复制" variant="secondary" onPress={press => copy($, press.surface)} />}
+            {s.undo && <Button key="undo" label="撤销替换" variant="secondary" onPress={() => undo($)} />}
+          </Box>
+          <Button key="close" label="关闭" plain dimColor onPress={async () => { await cancel($); await $.ui.close({ id: PANE }) }} />
+        </Box>
+        <Text size="caption" dimColor>使用当前模型，消耗模型用量。不读取历史或附件。</Text>
       </Box>
-      <Text dimColor>使用当前模型 · 消耗模型用量 · 不读取历史或附件</Text>
     </Box>
   })
 }
