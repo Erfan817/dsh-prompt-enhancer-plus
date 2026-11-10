@@ -65,7 +65,7 @@ window.__ModuleLoader__.load({
       timeout: 'The request timed out. Retry or shorten the draft.',
       outputTruncated: 'The result reached the output limit. Shorten the request or raise the configured limit.',
       more: 'More', details: 'Details and recent results', openPreview: 'Open prompt workspace',
-      fullscreen: 'Full screen', windowed: 'Windowed view', formatLabel: 'Output format',
+      formatLabel: 'Output format',
       formatPlain: 'Plain text', formatMarkdown: 'Markdown', editLabel: 'Editable prompt',
       editHint: 'Edit freely here; the composer stays unchanged until you replace the draft.',
       edited: 'Edited preview', rerunHint: 'Changing mode or format calls the model again, uses tokens, and replaces your preview edits. It starts from the original draft.',
@@ -130,7 +130,7 @@ window.__ModuleLoader__.load({
       timeout: '请求超时，请重试或缩短输入。',
       outputTruncated: '结果达到输出上限，请缩短输入或调高配置中的输出 token 上限。',
       more: '更多', details: '细节与最近结果', openPreview: '打开提示词工作区',
-      fullscreen: '全屏', windowed: '窗口模式', formatLabel: '输出格式',
+      formatLabel: '输出格式',
       formatPlain: '纯文本', formatMarkdown: 'Markdown', editLabel: '可编辑的提示词',
       editHint: '可直接编辑全文；点击替换草稿前，不会改变输入框。',
       edited: '预览已编辑', rerunHint: '切换模式或格式会从原始草稿重新调用模型、消耗 token，并替换当前预览中的编辑。',
@@ -293,7 +293,7 @@ window.__ModuleLoader__.load({
       const historyKey = HISTORY_PREFIX + sessionId;
       let state = {
         status: 'idle', mode: 'general', format: 'plain', level: 'standard', useProject: true, persona: null,
-        editorSeed: undefined, panelView: 'preview', fullscreen: false,
+        editorSeed: undefined, panelView: 'preview',
         targetDraft: '', insertion: null, targetInvalidated: false, requestId: 0,
         originalDraft: '', enhanced: '', generated: '', error: '',
         usage: null, elapsedMs: null, model: null, undo: null, history: [],
@@ -582,7 +582,6 @@ window.__ModuleLoader__.load({
           bridge.open(sessionId);
         },
         preview() { if (!disposed) store.update({ panelView: 'preview', editorSeed: undefined }); },
-        toggleFullscreen() { if (!disposed) store.update({ fullscreen: !store.get().fullscreen }); },
         setUseProject(value) { if (!disposed) store.update({ useProject: value !== false }); },
         showError(error) { if (!disposed) store.update({ error }); },
       };
@@ -818,17 +817,19 @@ window.__ModuleLoader__.load({
 .pe-icon{color:var(--dsw-alias-brand-primary);}
 .pe-toolbar-error{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--dsw-alias-state-error-primary);}
 .pe-overlay{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:clamp(12px,3vw,36px);pointer-events:auto;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;}
-.pe-workspace{display:flex;flex-direction:column;width:min(1120px,100%);height:min(88vh,980px);height:min(88dvh,980px);max-height:100%;min-height:0;box-sizing:border-box;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 55%,transparent);border-radius:14px;background:transparent;box-shadow:0 16px 64px color-mix(in srgb,var(--dsw-alias-label-primary) 12%,transparent);font:inherit;font-size:14px;}
-.pe-overlay.pe-fullscreen{padding:0;}
-.pe-fullscreen .pe-workspace{width:100%;height:100%;max-height:none;border:0;border-radius:0;}
-.pe-fullscreen .pe-workspace-head,.pe-fullscreen .pe-workspace-footer{border-radius:0;}
+.pe-workspace{display:flex;flex-direction:column;width:min(1120px,100%);height:min(88vh,980px);height:min(88dvh,980px);max-height:100%;min-height:0;box-sizing:border-box;position:relative;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 55%,transparent);border-radius:14px;background:transparent;box-shadow:0 16px 64px color-mix(in srgb,var(--dsw-alias-label-primary) 12%,transparent);font:inherit;font-size:14px;}
 .pe-workspace-head,.pe-workspace-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;padding:14px 24px;background:color-mix(in srgb,var(--dsw-alias-bg-overlay) 86%,transparent);}
 .pe-workspace-head{border-bottom:1px solid var(--dsw-alias-border-l1);border-radius:14px 14px 0 0;}
 .pe-workspace-footer{border-radius:0 0 14px 14px;}
 .pe-workspace-title{margin:0;font:inherit;font-size:16px;font-weight:600;}
 .pe-window-actions,.pe-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.pe-workspace-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:24px 32px;background:color-mix(in srgb,var(--dsw-alias-bg-overlay) 96%,transparent);}
-.pe-document{width:100%;max-width:900px;margin:0 auto;}
+.pe-workspace-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:24px 320px 24px 32px;background:color-mix(in srgb,var(--dsw-alias-bg-overlay) 96%,transparent);}
+.pe-workspace-body.pe-personas-view{padding-right:32px;}
+.pe-document{width:100%;max-width:none;margin:0;}
+.pe-persona-rail{position:absolute;top:76px;right:24px;bottom:84px;width:260px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding:14px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 55%,transparent);border-radius:12px;background:color-mix(in srgb,var(--dsw-alias-bg-overlay) 86%,transparent);}
+.pe-persona-rail h3{margin:0;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;font-weight:600;}
+.pe-persona-rail .pe-actions{flex-direction:column;align-items:stretch;}
+@media(max-width:900px){.pe-workspace-body{padding:20px 24px;}.pe-persona-rail{position:static;width:auto;margin:0 0 14px;}}
 .pe-workspace-footer{border-top:1px solid var(--dsw-alias-border-l1);}
 .pe-close{width:28px;height:28px;padding:0;font-size:22px;}
 .pe-action{min-height:30px;padding:5px 10px;font-size:13px;}
@@ -867,33 +868,37 @@ window.__ModuleLoader__.load({
 @media(max-width:620px){.pe-overlay{padding:8px;}.pe-workspace{height:calc(100vh - 16px);height:calc(100dvh - 16px);}.pe-workspace-head,.pe-workspace-footer{padding:12px 16px;}.pe-workspace-body{padding:18px 20px;}.pe-workspace-title{font-size:15px;}.pe-output-controls{gap:12px;}.pe-preview-text{font-size:14px;}.pe-workspace-footer{gap:8px;}.pe-workspace-footer .pe-help{display:none;}}
 `;
 
-    function PromptEnhancerDetails({ snapshot, actions, library, t }) {
+    function PersonaRail({ snapshot, actions, library, t }) {
       const { state } = snapshot;
       const catalog = useStore(library);
+      return h('aside', { className: 'pe-persona-rail', 'aria-label': t('personaTitle') },
+        h('h3', null, t('personaTitle')),
+        h('select', {
+          className: 'pe-persona-list', 'aria-label': t('personaSelected'), value: catalog.selectedId,
+          disabled: !catalog.ready || state.status === 'busy',
+          onFocus: () => { void library.load(); },
+          onChange: (event) => {
+            void library.act({ action: 'select', id: event.target.value })
+              .catch((error) => actions.showError(personaErrorText(error, t)));
+          },
+        }, ...catalog.personas.map((persona) => h('option', { key: persona.id, value: persona.id }, personaName(persona, t)))),
+        h('p', { className: 'pe-help' }, t('personaLocal')),
+        h('div', { className: 'pe-actions' },
+          h('button', { type: 'button', className: 'pe-action', disabled: state.status === 'busy', onClick: () => actions.personas() }, t('personas')),
+          state.persona ? h('button', {
+            type: 'button', className: 'pe-action', disabled: state.status === 'busy',
+            onClick: () => actions.personas({ ...state.persona, id: '', name: personaName(state.persona, t) + t('personaCopySuffix') }),
+          }, t('personaFromPreview')) : null),
+        !state.persona && state.enhanced.length > 0 ? h('p', { className: 'pe-help' }, t('personaLegacy')) : null,
+        catalog.error ? h('p', { className: 'pe-error-text', role: 'alert' }, t('personaStorageFailed'),
+          h('button', { type: 'button', className: 'pe-action', onClick: () => library.load() }, t('retry'))) : null);
+    }
+
+    function PromptEnhancerDetails({ snapshot, actions, library, t }) {
+      const { state } = snapshot;
       const meta = [state.model?.model, formatUsage(state.usage, t), formatElapsed(state.elapsedMs)].filter(Boolean);
       return h('details', { className: 'pe-details', open: state.enhanced.length === 0 ? true : undefined },
         h('summary', null, t('details')),
-        h('section', { className: 'pe-detail-section' },
-          h('h3', null, t('personas')),
-          h('select', {
-            className: 'pe-persona-list', 'aria-label': t('personaSelected'), value: catalog.selectedId,
-            disabled: !catalog.ready || state.status === 'busy',
-            onFocus: () => { void library.load(); },
-            onChange: (event) => {
-              void library.act({ action: 'select', id: event.target.value })
-                .catch((error) => actions.showError(personaErrorText(error, t)));
-            },
-          }, ...catalog.personas.map((persona) => h('option', { key: persona.id, value: persona.id }, personaName(persona, t)))),
-          h('p', { className: 'pe-help' }, t('personaLocal')),
-          h('div', { className: 'pe-actions' },
-            h('button', { type: 'button', className: 'pe-action', disabled: state.status === 'busy', onClick: () => actions.personas() }, t('personas')),
-            state.persona ? h('button', {
-              type: 'button', className: 'pe-action', disabled: state.status === 'busy',
-              onClick: () => actions.personas({ ...state.persona, id: '', name: personaName(state.persona, t) + t('personaCopySuffix') }),
-            }, t('personaFromPreview')) : null),
-          !state.persona && state.enhanced.length > 0 ? h('p', { className: 'pe-help' }, t('personaLegacy')) : null,
-          catalog.error ? h('p', { className: 'pe-error-text', role: 'alert' }, t('personaStorageFailed'),
-            h('button', { type: 'button', className: 'pe-action', onClick: () => library.load() }, t('retry'))) : null),
         state.enhanced.length > 0 ? h('section', { className: 'pe-detail-section' },
           h('h3', null, t('modelLabel')), h('p', { className: 'pe-help' }, meta.join(' · ')),
           state.persona ? h('p', { className: 'pe-help' }, `${t('personaSelected')}: ${personaName(state.persona, t)}`) : null) : null,
@@ -970,7 +975,7 @@ window.__ModuleLoader__.load({
         }
       };
       return h('div', {
-        className: 'pe-overlay' + (state.fullscreen ? ' pe-fullscreen' : ''),
+        className: 'pe-overlay',
         onMouseDown: (event) => event.stopPropagation(), onClick: (event) => event.stopPropagation(),
       }, h('section', {
         className: 'pe-workspace', ref: panelRef, tabIndex: -1, role: 'dialog', 'aria-modal': true,
@@ -979,9 +984,8 @@ window.__ModuleLoader__.load({
       h('header', { className: 'pe-workspace-head' },
         h('h2', { className: 'pe-workspace-title' }, t(personas ? 'personaTitle' : 'previewTitle')),
         h('div', { className: 'pe-window-actions' },
-          h('button', { type: 'button', className: 'pe-action', 'aria-pressed': state.fullscreen, onClick: actions.toggleFullscreen }, t(state.fullscreen ? 'windowed' : 'fullscreen')),
           h('button', { type: 'button', className: 'pe-close', 'aria-label': t('close'), title: t('close'), onClick: actions.close }, '×'))),
-      h('div', { className: 'pe-workspace-body' }, h('div', { className: 'pe-document' },
+      h('div', { className: 'pe-workspace-body' + (personas ? ' pe-personas-view' : '') }, h('div', { className: 'pe-document' },
         personas ? h(PersonaPanel, { library, seed: state.editorSeed, t, onClose: actions.preview })
           : h(React.Fragment, null,
             hasResult ? h(React.Fragment, null,
@@ -1016,6 +1020,7 @@ window.__ModuleLoader__.load({
                   h('button', { type: 'button', className: 'pe-action pe-primary', disabled: !snapshot.canStart, onClick: () => { void actions.start(); } }, t('regenerate'))) : null),
             state.error ? h('p', { className: 'pe-error-text', role: 'alert' }, state.error) : null,
             h(PromptEnhancerDetails, { snapshot, actions, library, t })))),
+      personas ? null : h(PersonaRail, { snapshot, actions, library, t }),
       h('footer', { className: 'pe-workspace-footer' },
         personas ? h('button', { type: 'button', className: 'pe-action', onClick: actions.preview }, t('back'))
           : h('div', { className: 'pe-actions' },
