@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="README.md#中文">中英对照版</a> · <b>中文</b>
+  <a href="README.md">English</a> · <a href="README.md">中英对照版</a> · <b>中文</b>
 </p>
 
 ---
