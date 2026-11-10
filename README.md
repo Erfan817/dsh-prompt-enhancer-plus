@@ -267,7 +267,7 @@ Automated checks do not establish visual quality. Manually check light/dark them
 - `npm run desktop:smoke` passes a real local-server startup, page serving, authenticated initialization, five personas, the session discovery file (written then removed on close), and no model call.
 - `node desktop/local.mjs --smoke-test` was run again after the `/api/enhance` change with the same result.
 - A manual end-to-end run used `createCompanionServer` with a fake provider: the discovery file produced a working origin/token, `/api/health` returned `{ready:true,version:'1.6.0'}`, `/api/enhance` returned `level: detailed`, the project context reached the upstream system prompt, the detailed skeleton contained `Failure cases`, and a request without an `Origin` header was rejected with 403. The same server was driven through `cli/enhance.mjs` (context and detailed level confirmed) and through the VS Code `lib/client.js` (`ping` and `enhance` confirmed).
-- The DSH profile is re-linked to this source directory through the plugin manager at version 1.6.0.
+- The desktop profile still links this source directory (`link:D:/插件/dsh-prompt-enhancer-plus`), and its `package.json` now reports version 1.6.0. A DSH restart is required for the Host generation to load the new Host code; a page refresh alone is not enough.
 - Not verified in this working copy: real VS Code/Cursor UI, a real pressed global hotkey, Claude Code slash-command execution, and the Electron entry (still fails natively with `0x80000003`).
 
 ## License
