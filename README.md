@@ -224,6 +224,17 @@ POST /api/health    → { ok: true, value: { ready: true, version } }
 | 失败行为 · Failure behaviour | 静默降级为无上下文 · silently degrades to no context |
 | 开关 · Toggle | 预览面板「项目感知」/ `useProject` 工具参数 · Preview panel toggle / `useProject` tool argument |
 
+## 编辑中学习偏好 · Learn from edits (DSH)
+
+**中文：** 首次强化后，在预览中手动修改，或先替换草稿再修改输入框，随后再次强化。系统会额外调用模型，从生成稿与修改稿的差异中提议一条“今后怎么改写”的习惯；你可以编辑建议、选择范围，再明确确认保存。取消不保存也不继续强化；“不保存，继续强化”保留已有规则。模型不应提取任务事实、名称、路径或秘密，确认前仍须人工检查。
+
+**English:** Enhance once, manually edit the preview (or apply it and edit the composer), then enhance again. An additional model call compares the generated and edited versions and proposes a reusable rewriting habit. Edit the suggestion, choose its scope, and explicitly confirm to save. Cancel neither saves nor continues; continuing without saving keeps existing rules. Inference excludes task facts, names, paths and secrets, but you must review the suggestion.
+
+- **范围 · Scopes:** 默认项目，按会话当前工作目录规范化匹配（Windows 忽略大小写）；也可选择当前会话或当前 DSH 配置档全局。确认后的当前强化和后续适用强化均使用已保存方向；它们不改变主助手或其他适配器。<br>*Project by normalized current working directory is the default (case-insensitive on Windows); session and profile-global scopes are also available. Saved directions apply to the immediate retry and subsequent matching enhancements, not the main assistant or other adapters.*
+- **冲突 · Conflicts:** 保守地将所有不同方向视为可能冲突，必须选择保留或覆盖。仅同范围、同项目/会话键的旧规则会被替换；其他范围保留，通过规则 ID 在新规则适用的上下文内覆盖。项目或会话覆盖不会删除其他项目/会话所需的全局或项目记忆。删除覆盖规则可能恢复保留方向；之后新保存的规则会重新进入冲突检查。<br>*Every different direction is conservatively treated as a possible conflict and requires a keep/override decision. Only records with the same scope and context key are replaced. Cross-scope records are retained and overridden by rule ID only where the new rule applies. Project/session overrides never delete broader memories needed elsewhere. Deleting an override can restore retained directions; newly saved rules undergo conflict review again.*
+- **管理 · Management:** 面板详情中的“已保存偏好”列出适用规则及生效/被覆盖状态，可删除；工具 `prompt_enhancer` 可 `list-preferences` / `delete-preference`，使用返回的 `revision`。推断及确认仅用户界面可执行，工具不能确认学习。<br>*Saved preferences in panel details lists applicable rules, active/overridden status, and deletion controls. The tool supports `list-preferences` / `delete-preference` using the returned revision; inference and confirmation remain UI-only.*
+- **边界 · Boundaries:** 清空、发送、大幅替换输入或打开历史记录不会沿用旧学习基线。文本连续性是启发式判断，不能保证识别所有新任务；不确定时取消建议。基线与建议仅在主机内存保留约 30 分钟，重启或工作目录变化后需重新强化。并发保存以版本检查拒绝旧修改。<br>*Clearing, sending, substantially replacing input or opening history drops the learning baseline. Text continuity is heuristic, not a guarantee of task identity; cancel irrelevant proposals. Baselines/proposals stay in host memory for about 30 minutes; restart or workspace changes require a fresh enhancement. Revision checks reject stale concurrent saves.*
+
 ## 开发与测试 · Development
 
 ```sh
@@ -233,14 +244,15 @@ npm run desktop:smoke
 npm pack --dry-run
 ```
 
-`npm test` 共九套测试，不需要 Electron，也不调用真实模型。<br>
-`npm test` runs nine suites without Electron and without calling a real model.
+`npm test` 共十套测试，不需要 Electron，也不调用真实模型。<br>
+`npm test` runs ten suites without Electron and without calling a real model.
 
 | 测试 Suite | 覆盖内容 Covers |
 | --- | --- |
 | `test-core` | 规则、三档、符号保真 · rules, levels, symbol preservation |
 | `test-host` | DSH Host / Tool 兼容 · host/tool compatibility |
 | `test-personas` | 人格持久化与冲突 · persona persistence and conflicts |
+| `test-preferences` | 偏好确认、范围隔离、覆盖与并发 · preference confirmation, scope isolation, overrides and concurrency |
 | `test-client` | 客户端状态机 · client state machine |
 | `test-features` | 项目上下文与三档 · project context and three levels |
 | `desktop/test-server` | 本机 API 安全与契约 · loopback API security and contract |

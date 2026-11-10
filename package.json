@@ -40,6 +40,7 @@
     "index.js",
     "client.js",
     "personas.js",
+    "preferences.js",
     "prompt-core.js",
     "test-*.mjs",
     "desktop/*.mjs",
@@ -69,7 +70,7 @@
     "zod": "^4.4.3"
   },
   "scripts": {
-    "test": "node test-core.mjs && node test-host.mjs && node test-personas.mjs && node test-client.mjs && node test-features.mjs && node desktop/test-desktop.mjs && node desktop/test-server.mjs && node vscode-extension/test-client.mjs && node hotkey-tool/test-cli.mjs",
+    "test": "node test-core.mjs && node test-host.mjs && node test-personas.mjs && node test-preferences.mjs && node test-client.mjs && node test-features.mjs && node desktop/test-desktop.mjs && node desktop/test-server.mjs && node vscode-extension/test-client.mjs && node hotkey-tool/test-cli.mjs",
     "desktop": "node desktop/local.mjs",
     "desktop:smoke": "node desktop/local.mjs --smoke-test",
     "enhance": "node cli/enhance.mjs",

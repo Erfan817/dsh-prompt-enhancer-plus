@@ -256,7 +256,7 @@ const formats = makeSession('formats', 'Original source, not edited preview');
 await formats.controller.actions.start();
 formats.controller.actions.editPreview('Local preview edits');
 await formats.controller.actions.rerun({ format: 'markdown' });
-assert.equal(enhanceBody.text, 'Original source, not edited preview');
+assert.equal(enhanceBody.text, 'Local preview edits');
 assert.equal(enhanceBody.format, 'markdown');
 assert.equal(formats.store.get().format, 'markdown');
 assert.equal(formats.store.get().history[0].format, 'markdown');
@@ -365,6 +365,95 @@ disposeLate.resolve(response({ enhanced: 'Ignored disposed result' }));
 await disposedRequest;
 assert.equal(disposedSession.store.get().history.length, 0);
 assert.equal(disposedSession.controller.actions.replace(), false);
+const learnedCalls = [];
+fetchImpl = async (url, options) => {
+  const body = JSON.parse(options.body); learnedCalls.push(body);
+  return response(url.endsWith('/enhance') ? { enhanced: 'Write a useful report with clear paragraphs.', baselineId: 'baseline' }
+    : body.action === 'infer' ? { text: 'Prefer short paragraphs.', proposalId: 'proposal', revision: 0, rules: [], cwd: 'D:/project' }
+      : { revision: 1, rules: [] });
+};
+const learning = makeSession('learning');
+await learning.controller.actions.start();
+learning.controller.actions.editPreview('Write a useful report with short paragraphs.');
+await learning.controller.actions.start();
+assert.equal(learning.store.get().learning.status, 'review');
+assert.equal(learning.store.get().learning.scope, 'project');
+assert.equal(learnedCalls.at(-1).action, 'infer');
+assert.equal(learning.snapshot().canApply, false);
+learning.controller.actions.changeLearning({ scope: 'session' });
+await learning.controller.actions.confirmLearning();
+assert.equal(learnedCalls.at(-2).action, 'confirm');
+assert.equal(learnedCalls.at(-2).scope, 'session');
+assert.equal(learnedCalls.at(-1).text, 'Write a useful report with short paragraphs.');
+assert.equal(learning.store.get().learning, null);
+learning.controller.actions.replace(); learning.sync();
+learning.changeDraft('Write a useful report with concise paragraphs.');
+await learning.controller.actions.start();
+assert.equal(learnedCalls.at(-1).action, 'infer', 'composer edits retain baseline after replace');
+const count = learnedCalls.length;
+learning.controller.actions.close();
+assert.equal(learnedCalls.length, count, 'cancel writes nothing');
+learning.changeDraft(''); learning.changeDraft('An unrelated brand new task');
+await learning.controller.actions.start();
+assert.equal(learnedCalls.at(-1).action, undefined, 'clearing the composer drops learning baseline');
+assert.equal(learning.store.get().learning, null);
+learning.controller.actions.openHistory({ original: 'old', enhanced: 'Write a useful report with clear paragraphs.' });
+learning.controller.actions.editPreview('Write a useful report with shorter paragraphs.');
+await learning.controller.actions.start();
+assert.equal(learnedCalls.at(-1).action, undefined, 'history is never a learning baseline');
+const continuity = makeSession('continuity');
+await continuity.controller.actions.start();
+continuity.controller.actions.replace(); continuity.sync();
+await continuity.controller.actions.start();
+assert.equal(learnedCalls.at(-1).action, undefined, 'unchanged applied text does not infer a habit');
+continuity.controller.actions.editPreview('Write a useful report with short paragraphs.');
+await continuity.controller.actions.start();
+continuity.controller.actions.changeLearning({ resolution: 'replace' });
+continuity.controller.actions.changeLearning({ scope: 'global' });
+assert.equal(continuity.store.get().learning.resolution, '', 'scope changes require a renewed conflict choice');
+const frozenPreview = continuity.store.get().enhanced;
+continuity.controller.actions.editPreview('Ignored during review');
+assert.equal(continuity.store.get().enhanced, frozenPreview);
+continuity.controller.actions.close();
+
+for (const cancelMode of ['close', 'dispose', 'draft-change', 'send']) {
+  const pendingReview = makeSession(`review-${cancelMode}`);
+  fetchImpl = async () => response({ enhanced: 'Write a useful report with clear paragraphs.', baselineId: 'baseline' });
+  await pendingReview.controller.actions.start();
+  pendingReview.controller.actions.editPreview('Write a useful report with short paragraphs.');
+  const inferenceResult = deferred();
+  let inferenceSignal;
+  let pendingCalls = 0;
+  fetchImpl = (_url, options) => { pendingCalls++; inferenceSignal = options.signal; return inferenceResult.promise; };
+  const inferencePending = pendingReview.controller.actions.start();
+  if (cancelMode === 'close') pendingReview.controller.actions.close();
+  else if (cancelMode === 'dispose') pendingReview.controller.dispose();
+  else if (cancelMode === 'send') pendingReview.setPhase('sending');
+  else pendingReview.changeDraft('Unrelated new task');
+  if (['close', 'dispose'].includes(cancelMode)) assert.equal(inferenceSignal.aborted, true);
+  inferenceResult.resolve(response({ text: '', revision: 0, rules: [] }));
+  await inferencePending;
+  assert.equal(pendingCalls, 1, 'invalidated inference never launches another model call');
+  assert.equal(pendingReview.store.get().learning, null);
+  assert.equal(pendingReview.writes.length, 0);
+}
+const preferenceRace = makeSession('preference-race');
+preferenceRace.store.update({ preferenceCatalog: { revision: 1, rules: [{ id: 'old' }] } });
+const stalePreferenceList = deferred();
+fetchImpl = async (_url, options) => JSON.parse(options.body).action === 'list-preferences'
+  ? stalePreferenceList.promise : response({ revision: 2, rules: [] });
+const staleListRequest = preferenceRace.controller.actions.managePreferences();
+await preferenceRace.controller.actions.managePreferences('old');
+stalePreferenceList.resolve(response({ revision: 1, rules: [{ id: 'old' }] }));
+await staleListRequest;
+assert.equal(preferenceRace.store.get().preferenceCatalog.revision, 2);
+assert.equal(preferenceRace.store.get().preferenceCatalog.rules.length, 0);
+fetchImpl = async (_url, options) => JSON.parse(options.body).action === 'delete-preference'
+  ? response({ error: { code: 'preference-conflict', message: 'Changed elsewhere' } }, 409)
+  : response({ revision: 3, rules: [] });
+await preferenceRace.controller.actions.managePreferences('old');
+assert.equal(preferenceRace.store.get().preferenceCatalog.revision, 3);
+
 for (const fixture of fixtures) fixture.dispose();
 library.dispose();
 for (const dispose of disposers.reverse()) if (typeof dispose === 'function') await dispose();

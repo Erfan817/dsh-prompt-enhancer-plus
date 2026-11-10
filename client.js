@@ -13,6 +13,12 @@ window.__ModuleLoader__.load({
     const HISTORY_PREFIX = 'dsh-prompt-enhancer-plus:history:';
 
     const EN = {
+      learningTitle: 'Review learned preference', learningHint: 'Only this reusable direction will be saved. Review for task details or sensitive information before confirming.',
+      learningBusy: 'Inferring a reusable preference from your edits…', learningSave: 'Confirm, save and enhance', learningSkip: 'Continue without saving',
+      scope: 'Save scope', scopeproject: 'Project (current workspace)', scopesession: 'This session', scopeglobal: 'Global (this profile)',
+      conflicts: 'Every different direction is treated as a possible conflict (including overridden ones). Choose explicitly:', keepExisting: 'Keep existing; continue', replaceExisting: 'Override listed directions within the selected scope',
+      overrideHint: 'Same-scope directions are replaced. Other scopes are retained and only overridden where this saved rule applies. Deleting an override can restore retained directions.', preferenceActive: 'Active', preferenceOverridden: 'Overridden here',
+      preferences: 'Saved preferences', noPreferences: 'No saved preferences apply here.',
       button: 'Enhance prompt',
       busy: 'Enhancing…',
       doneShort: 'Enhanced',
@@ -68,7 +74,7 @@ window.__ModuleLoader__.load({
       formatLabel: 'Output format',
       formatPlain: 'Plain text', formatMarkdown: 'Markdown', editLabel: 'Editable prompt',
       editHint: 'Edit freely here; the composer stays unchanged until you replace the draft.',
-      edited: 'Edited preview', rerunHint: 'Changing mode or format calls the model again, uses tokens, and replaces your preview edits. It starts from the original draft.',
+      edited: 'Edited preview', rerunHint: 'Enhance again to learn from your preview edits. Mode or format changes also rerun enhancement; edited previews are reviewed for reusable preferences before saving. Model calls use tokens.',
       regenerate: 'Enhance current draft', waiting: 'Generating your prompt. You can cancel without changing the composer.',
       startHint: 'Enhance the current draft, open a recent result, or manage your enhancement personas.',
       modelLabel: 'Model and usage', noResult: 'Your editable result will appear here.',
@@ -78,6 +84,12 @@ window.__ModuleLoader__.load({
       undoExpired: 'The draft changed or undo expired. Your current draft was left untouched.',
     };
     const ZH = {
+      learningTitle: '确认学习到的偏好', learningHint: '只保存下方可复用方向。确认前请检查并去掉任务细节或敏感信息。',
+      learningBusy: '正在从你的编辑中推断可复用偏好…', learningSave: '确认保存并强化', learningSkip: '不保存，继续强化',
+      scope: '保存范围', scopeproject: '项目（当前工作目录）', scopesession: '当前会话', scopeglobal: '全局（当前配置档）',
+      conflicts: '所有不同方向（包括已被覆盖的方向）均视为可能冲突，请明确选择：', keepExisting: '保留已有方向并继续', replaceExisting: '仅在所选范围内覆盖下列方向',
+      overrideHint: '同范围方向会被替换；其他范围的记忆保留，仅在新规则适用时被覆盖。删除覆盖规则后，保留的方向可能重新生效。', preferenceActive: '生效中', preferenceOverridden: '在此被覆盖',
+      preferences: '已保存偏好', noPreferences: '当前没有适用的已保存偏好。',
       button: '强化提示词',
       busy: '强化中…',
       doneShort: '已强化',
@@ -133,7 +145,7 @@ window.__ModuleLoader__.load({
       formatLabel: '输出格式',
       formatPlain: '纯文本', formatMarkdown: 'Markdown', editLabel: '可编辑的提示词',
       editHint: '可直接编辑全文；点击替换草稿前，不会改变输入框。',
-      edited: '预览已编辑', rerunHint: '切换模式或格式会从原始草稿重新调用模型、消耗 token，并替换当前预览中的编辑。',
+      edited: '预览已编辑', rerunHint: '再次强化会从预览编辑中学习偏好；切换模式或格式也会重新强化。保存可复用偏好前需确认，模型调用会消耗 token。',
       regenerate: '强化当前草稿', waiting: '正在生成提示词，可随时取消，不会改动输入框。',
       startHint: '可以强化当前草稿、打开最近结果，或管理强化人格。',
       modelLabel: '模型与用量', noResult: '生成后的全文会在这里展开，可直接编辑。',
@@ -293,7 +305,7 @@ window.__ModuleLoader__.load({
       const historyKey = HISTORY_PREFIX + sessionId;
       let state = {
         status: 'idle', mode: 'general', format: 'plain', level: 'standard', useProject: true, persona: null,
-        editorSeed: undefined, panelView: 'preview',
+        editorSeed: undefined, panelView: 'preview', baselineId: null, learning: null, preferenceCatalog: null,
         targetDraft: '', insertion: null, targetInvalidated: false, requestId: 0,
         originalDraft: '', enhanced: '', generated: '', error: '',
         usage: null, elapsedMs: null, model: null, undo: null, history: [],
@@ -363,6 +375,7 @@ window.__ModuleLoader__.load({
         const result = {
           status: 'preview', originalDraft, targetDraft, insertion,
           targetInvalidated: !current || store.get().targetInvalidated,
+          baselineId: payload?.baselineId ?? null,
           persona: payload?.persona ?? null,
           enhanced: enhanced.trim(), generated: enhanced.trim(),
           mode: normalizeMode(payload?.mode ?? mode),
@@ -448,6 +461,26 @@ window.__ModuleLoader__.load({
       let undoTimer;
       let timedUndo = null;
       let connection;
+      let appliedBaseline = null;
+      let reviewRequest = null;
+      let reviewEpoch = 0;
+      const preferenceCall = async (request, signal) => {
+        const response = await fetch('/api/prompt-enhancer-plus/preferences', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...request, sessionId }), signal,
+        });
+        const payload = await response.json();
+        if (!response.ok) throw Object.assign(new Error(payload.error?.message), { code: payload.error?.code });
+        return payload;
+      };
+      const related = (baseline, edited) => {
+        if (!baseline || !edited) return false;
+        let prefix = 0;
+        while (prefix < Math.min(baseline.length, edited.length) && baseline[prefix] === edited[prefix]) prefix++;
+        let suffix = 0;
+        while (suffix < Math.min(baseline.length, edited.length) - prefix && baseline[baseline.length - suffix - 1] === edited[edited.length - suffix - 1]) suffix++;
+        return (prefix + suffix) / Math.max(baseline.length, edited.length) >= 0.35;
+      };
       const snapshot = () => {
         const state = store.get();
         const editable = input.phase === 'plain';
@@ -460,12 +493,12 @@ window.__ModuleLoader__.load({
         return {
           state, editable,
           canStart: editable && hasActions && input.draft.trim().length > 0
-            && state.status !== 'busy' && library.get().ready,
+            && state.status !== 'busy' && state.learning === null && library.get().ready,
           canRestart: editable && hasActions && input.draft.trim().length > 0
-            && state.status !== 'busy' && library.get().ready,
+            && state.status !== 'busy' && state.learning === null && library.get().ready,
           draftMatchesTarget,
-          canApply: targetCurrent && state.status !== 'busy' && state.enhanced.trim().length > 0,
-          canRerun: targetCurrent && state.status === 'preview' && state.originalDraft.trim().length > 0 && library.get().ready,
+          canApply: targetCurrent && state.learning === null && state.status !== 'busy' && state.enhanced.trim().length > 0,
+          canRerun: targetCurrent && state.status === 'preview' && state.learning === null && state.originalDraft.trim().length > 0 && library.get().ready,
           canUndo: editable && hasActions && state.undo !== null
             && state.undo.expiresAt > Date.now() && input.draft === state.undo.applied,
         };
@@ -492,6 +525,7 @@ window.__ModuleLoader__.load({
       const run = (request) => {
         if (disposed || pending !== null) return undefined;
         const controller = new AbortController();
+        appliedBaseline = null;
         pending = controller;
         bridge.open(sessionId);
         return requestEnhance(store, {
@@ -500,35 +534,105 @@ window.__ModuleLoader__.load({
             && input.draft === request.targetDraft && !store.get().targetInvalidated,
         }).finally(() => { if (pending === controller) pending = null; });
       };
+      const maybeLearn = async (request, baseline) => {
+        if (!baseline?.id || baseline.text === request.text || !related(baseline.text, request.text)) return run(request);
+        const epoch = ++reviewEpoch;
+        const controller = new AbortController();
+        reviewRequest = { request, controller, invalidated: false };
+        bridge.open(sessionId);
+        store.update({ learning: { status: 'inferring', scope: 'project' }, error: '' });
+        try {
+          const proposal = await preferenceCall({ action: 'infer', baselineId: baseline.id, text: request.text }, controller.signal);
+          if (disposed || epoch !== reviewEpoch) return;
+          if (reviewRequest.invalidated) { reviewRequest = null; store.update({ learning: null, error: t('changed') }); return; }
+          if (!proposal.text) { reviewRequest = null; store.update({ learning: null }); return run(request); }
+          store.update({ learning: { ...proposal, status: 'review', scope: 'project', resolution: '' } });
+        } catch (error) {
+          if (!disposed && epoch === reviewEpoch) store.update({ learning: { status: 'failed', scope: 'project' }, error: error.message });
+        }
+      };
       const actions = {
         open() { if (!disposed) bridge.open(sessionId); },
         close() {
           if (disposed) return;
+          if (store.get().learning?.status === 'saving') return;
+          reviewEpoch++; reviewRequest?.controller.abort(); reviewRequest = null;
+          store.update({ learning: null });
           cancelRequest();
           bridge.close(sessionId);
         },
         start() {
           if (disposed || !snapshot().canStart) return undefined;
-          return run({
-            text: input.draft.trim(), originalDraft: input.draft, targetDraft: input.draft,
+          const state = store.get();
+          const previewEdited = state.status === 'preview' && !state.targetInvalidated && state.enhanced !== state.generated;
+          return maybeLearn({
+            text: previewEdited ? state.enhanced.trim() : input.draft.trim(), originalDraft: input.draft, targetDraft: input.draft,
             insertion: input.inputActions.captureInsertion(),
             mode: store.get().mode, format: store.get().format,
             level: store.get().level, useProject: store.get().useProject,
             personaId: library.get().selectedId,
-          });
+          }, previewEdited ? { id: state.baselineId, text: state.generated } : appliedBaseline);
         },
         rerun(patch) {
           if (disposed || !snapshot().canRerun) return undefined;
           const state = store.get();
-          return run({
-            text: state.originalDraft.trim(), originalDraft: state.originalDraft, targetDraft: state.targetDraft,
+          return maybeLearn({
+            text: state.enhanced !== state.generated ? state.enhanced.trim() : state.originalDraft.trim(), originalDraft: state.originalDraft, targetDraft: state.targetDraft,
             insertion: state.insertion, mode: patch.mode ?? state.mode, format: patch.format ?? state.format,
             level: patch.level ?? state.level, useProject: patch.useProject ?? state.useProject,
             personaId: state.persona?.id ?? library.get().selectedId,
-          });
+          }, state.enhanced !== state.generated ? { id: state.baselineId, text: state.generated } : null);
+        },
+        changeLearning(patch) {
+          const learning = store.get().learning;
+          if (learning?.status === 'review') store.update({ learning: { ...learning, ...patch, ...(('text' in patch || 'scope' in patch) ? { resolution: '' } : {}) } });
+        },
+        async confirmLearning() {
+          const learning = store.get().learning;
+          if (disposed || learning?.status !== 'review' || !reviewRequest) return;
+          const request = reviewRequest.request;
+          if (reviewRequest.invalidated || input.phase !== 'plain' || input.draft !== request.targetDraft) { actions.close(); return; }
+          store.update({ learning: { ...learning, status: 'saving' }, error: '' });
+          try {
+            await preferenceCall({ action: 'confirm', proposalId: learning.proposalId, text: learning.text,
+              scope: learning.scope, resolution: learning.resolution, expectedRevision: learning.revision }, reviewRequest.controller.signal);
+            if (disposed) return;
+            const invalidated = reviewRequest?.invalidated;
+            reviewRequest = null; store.update({ learning: null });
+            if (!invalidated && input.phase === 'plain' && input.draft === request.targetDraft) return run(request);
+          } catch (error) {
+            if (disposed) return;
+            let catalog = {};
+            if (error.code === 'preference-conflict') catalog = await preferenceCall({ action: 'list-preferences' }).catch(() => ({}));
+            if (!disposed) store.update({ learning: { ...learning, ...catalog, status: 'review', resolution: '' }, error: error.message });
+          }
+        },
+        skipLearning() {
+          if (store.get().learning?.status === 'saving') return;
+          const request = reviewRequest?.invalidated ? null : reviewRequest?.request;
+          reviewEpoch++; reviewRequest?.controller.abort(); reviewRequest = null;
+          store.update({ learning: null, error: '' });
+          if (request && input.phase === 'plain' && input.draft === request.targetDraft) return run(request);
+        },
+        async managePreferences(id) {
+          const publishCatalog = (next) => {
+            const current = store.get().preferenceCatalog;
+            if (!disposed && (!current || next.revision >= current.revision)) store.update({ preferenceCatalog: next });
+          };
+          try {
+            const catalog = store.get().preferenceCatalog;
+            const next = await preferenceCall(id ? { action: 'delete-preference', id, expectedRevision: catalog?.revision } : { action: 'list-preferences' });
+            publishCatalog(next);
+          } catch (error) {
+            if (disposed) return;
+            if (error.code === 'preference-conflict') {
+              try { publishCatalog(await preferenceCall({ action: 'list-preferences' })); } catch {}
+            }
+            if (!disposed) store.update({ error: error.message });
+          }
         },
         editPreview(enhanced) {
-          if (!disposed && store.get().status !== 'busy' && typeof enhanced === 'string') store.update({ enhanced });
+          if (!disposed && store.get().learning === null && store.get().status !== 'busy' && typeof enhanced === 'string') store.update({ enhanced });
         },
         replace() {
           if (disposed || !snapshot().canApply) return false;
@@ -540,6 +644,7 @@ window.__ModuleLoader__.load({
             store.update({ targetInvalidated: true, error: t('previewChanged') });
             return false;
           }
+          appliedBaseline = state.baselineId ? { id: state.baselineId, text: state.generated, last: state.enhanced } : null;
           store.update({
             status: 'idle', error: '', insertion: null,
             undo: {
@@ -553,6 +658,7 @@ window.__ModuleLoader__.load({
         undo() {
           if (disposed || !snapshot().canUndo) return false;
           const undo = store.get().undo;
+          appliedBaseline = null;
           const accepted = input.inputActions.insertText(undo.original, {
             ...undo.insertion, start: 0, end: undo.applied.length,
           });
@@ -562,10 +668,11 @@ window.__ModuleLoader__.load({
           return accepted;
         },
         openHistory(entry) {
-          if (disposed || store.get().status === 'busy') return;
+          if (disposed || store.get().status === 'busy' || store.get().learning !== null) return;
+          appliedBaseline = null;
           const saved = historyEntry(entry);
           store.update({
-            status: 'preview', panelView: 'preview',
+            status: 'preview', panelView: 'preview', baselineId: null,
             originalDraft: saved.original, targetDraft: input.draft,
             insertion: input.inputActions?.captureInsertion() ?? null, targetInvalidated: input.phase !== 'plain',
             persona: saved.persona ?? null, enhanced: saved.enhanced, generated: saved.enhanced,
@@ -576,7 +683,7 @@ window.__ModuleLoader__.load({
           bridge.open(sessionId);
         },
         personas(seed) {
-          if (disposed || store.get().status === 'busy') return;
+          if (disposed || store.get().status === 'busy' || store.get().learning !== null) return;
           void library.load();
           store.update({ panelView: 'personas', editorSeed: seed });
           bridge.open(sessionId);
@@ -592,6 +699,11 @@ window.__ModuleLoader__.load({
         actions,
         updateInput(nextInput) {
           if (disposed) return;
+          if (appliedBaseline) {
+            if (nextInput.phase !== 'plain' || !related(appliedBaseline.last, nextInput.draft)) appliedBaseline = null;
+            else appliedBaseline.last = nextInput.draft;
+          }
+          if (reviewRequest && (nextInput.phase !== 'plain' || nextInput.draft !== reviewRequest.request.targetDraft)) reviewRequest.invalidated = true;
           input = nextInput;
           const state = store.get();
           const invalidTarget = state.insertion !== null && !state.targetInvalidated
@@ -606,6 +718,8 @@ window.__ModuleLoader__.load({
         dispose() {
           if (disposed) return;
           disposed = true;
+          reviewEpoch++; reviewRequest?.controller.abort(); reviewRequest = null;
+          store.update({ learning: null });
           unsubscribeStore();
           unsubscribeLibrary();
           if (undoTimer !== undefined) clearTimer(undoTimer);
@@ -917,10 +1031,35 @@ window.__ModuleLoader__.load({
             t(`level${normalizeLevel(entry.level)[0].toUpperCase()}${normalizeLevel(entry.level).slice(1)}`),
             formatElapsed(entry.elapsedMs),
           ].filter(Boolean).join(' · ')))))),
+        h('section', { className: 'pe-detail-section' },
+          h('button', { className: 'pe-action', onClick: () => { void actions.managePreferences(); } }, t('preferences')),
+          state.preferenceCatalog ? h('div', null, state.preferenceCatalog.rules.length ? state.preferenceCatalog.rules.map(item => h('p', { key: item.id }, `${t(`scope${item.scope}`)} · ${t(item.active ? 'preferenceActive' : 'preferenceOverridden')}: ${item.text}`, h('button', { className: 'pe-action', onClick: () => { void actions.managePreferences(item.id); } }, t('personaDelete')))) : t('noPreferences')) : null),
         h('div', { className: 'pe-detail-section' }, h('button', {
           type: 'button', className: 'pe-action', disabled: !snapshot.canStart,
           title: t('hint'), onClick: () => { void actions.start(); },
         }, t('regenerate')), h('p', { className: 'pe-help' }, t('hint'))));
+    }
+
+    function PreferenceReview({ state, actions, t }) {
+      const learning = state.learning;
+      if (!learning) return null;
+      const conflicts = (learning.rules ?? []).filter(item => item.text !== learning.text?.trim());
+      return h('section', { className: 'pe-details', 'aria-label': t('learningTitle'), 'aria-live': 'polite' },
+        h('h3', null, t('learningTitle')),
+        learning.status === 'inferring' ? h('p', null, t('learningBusy')) : null,
+        ['review', 'saving'].includes(learning.status) ? h(React.Fragment, null,
+          h('p', { className: 'pe-help' }, t('learningHint')),
+          h('label', { className: 'pe-field' }, t('learningTitle'), h('textarea', { value: learning.text, maxLength: 1000, disabled: learning.status === 'saving', onChange: e => actions.changeLearning({ text: e.target.value, resolution: '' }) })),
+          h('label', null, t('scope'), h('select', { value: learning.scope, disabled: learning.status === 'saving', onChange: e => actions.changeLearning({ scope: e.target.value, resolution: '' }) },
+            ...['project', 'session', 'global'].map(scope => h('option', { key: scope, value: scope }, t(`scope${scope}`))))),
+          h('p', { className: 'pe-help' }, learning.cwd),
+          h('p', { className: 'pe-help' }, t('overrideHint')),
+          conflicts.length ? h('div', null, h('p', null, t('conflicts')),
+            ...conflicts.map(item => h('p', { key: item.id, className: 'pe-direction' }, `${t(`scope${item.scope}`)}: ${item.text}`)),
+            h('label', null, h('input', { type: 'checkbox', checked: learning.resolution === 'replace', disabled: learning.status === 'saving', onChange: e => actions.changeLearning({ resolution: e.target.checked ? 'replace' : '' }) }), t('replaceExisting'))) : null,
+          h('button', { className: 'pe-action pe-primary', disabled: learning.status === 'saving' || !learning.text.trim() || (conflicts.length > 0 && learning.resolution !== 'replace'), onClick: () => { void actions.confirmLearning(); } }, t('learningSave'))) : null,
+        h('button', { className: 'pe-action', disabled: learning.status === 'saving', onClick: actions.skipLearning }, t(conflicts.length ? 'keepExisting' : 'learningSkip')),
+        h('button', { className: 'pe-action', disabled: learning.status === 'saving', onClick: actions.close }, t('cancel')));
     }
 
     function PromptEnhancerWorkspace({ session, library, t }) {
@@ -988,6 +1127,7 @@ window.__ModuleLoader__.load({
       h('div', { className: 'pe-workspace-body' + (personas ? ' pe-personas-view' : '') }, h('div', { className: 'pe-document' },
         personas ? h(PersonaPanel, { library, seed: state.editorSeed, t, onClose: actions.preview })
           : h(React.Fragment, null,
+            h(PreferenceReview, { state, actions, t }),
             hasResult ? h(React.Fragment, null,
               h('div', { className: 'pe-output-controls' },
                 h('label', null, t('modeLabel'), h('select', {
@@ -1009,7 +1149,7 @@ window.__ModuleLoader__.load({
               h('p', { className: 'pe-help' }, t('rerunHint')),
               h('p', { className: 'pe-help pe-editor-hint' }, t('editHint')),
               h(AutoGrowingTextarea, {
-                className: 'pe-preview-text', value: state.enhanced, 'aria-label': t('editLabel'), spellCheck: false,
+                className: 'pe-preview-text', value: state.enhanced, disabled: state.learning !== null, 'aria-label': t('editLabel'), spellCheck: false,
                 onChange: (event) => actions.editPreview(event.target.value),
               }),
               !snapshot.canApply ? h('p', { className: 'pe-help', role: 'status' }, t(snapshot.editable ? 'previewChanged' : 'phaseLocked')) : null)
@@ -1025,6 +1165,7 @@ window.__ModuleLoader__.load({
         personas ? h('button', { type: 'button', className: 'pe-action', onClick: actions.preview }, t('back'))
           : h('div', { className: 'pe-actions' },
             h('button', { type: 'button', className: 'pe-action pe-primary', disabled: !snapshot.canApply, onClick: actions.replace }, t('apply')),
+            h('button', { type: 'button', className: 'pe-action', disabled: !snapshot.canStart, onClick: () => { void actions.start(); } }, t('regenerate')),
             h('button', { type: 'button', className: 'pe-action', disabled: !hasResult || state.enhanced.length === 0, onClick: copy }, t(copied ? 'copied' : 'copy')),
             state.status === 'busy' ? h('button', { type: 'button', className: 'pe-action', onClick: actions.close }, t('cancel')) : null),
         h('span', { className: 'pe-help pe-preview-status' }, state.enhanced !== state.generated ? t('edited') : t('resultFormatHint')))));

@@ -7,6 +7,8 @@
  * it never enters conversation history and never changes the session log.
  */
 
+import { randomUUID } from 'node:crypto';
+import { PREFERENCE_DOMAIN, PreferenceLibrary, INFERENCE_SYSTEM, parsePreference, projectKey } from './preferences.js';
 import { PERSONA_DOMAIN, PERSONA_FIELDS, PersonaLibrary } from './personas.js';
 import { enhancementSystem, inputFor, normalizeEnhancedText, resolveFormat, resolveLevel, resolveMode } from './prompt-core.js';
 
@@ -232,7 +234,7 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
     role: 'user',
     content: [{ type: 'text', text: inputFor(text) }],
   }];
-  const system = enhancementSystem({ ...options, format: resolvedFormat, projectContext }, resolvedMode, personaSnapshot, resolvedLevel);
+  const system = options.inference ? INFERENCE_SYSTEM : enhancementSystem({ ...options, format: resolvedFormat, projectContext }, resolvedMode, personaSnapshot, resolvedLevel);
   callSignal.throwIfAborted();
   let output = '';
   let blockText = '';
@@ -268,7 +270,7 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
   if (finish?.kind === 'aborted') {
     throw codedError('aborted', 'The model call was cancelled.');
   }
-  const enhanced = normalizeEnhancedText(output || blockText, { format: resolvedFormat, original: text });
+  const enhanced = options.inference ? (output || blockText).trim() : normalizeEnhancedText(output || blockText, { format: resolvedFormat, original: text });
   if (enhanced.length === 0) {
     throw codedError('empty-output', 'The model returned no text.');
   }
@@ -341,10 +343,61 @@ async function handleEnhance(service, request) {
  * @param {object} config - optional row config: maxInputChars, maxOutputTokens, timeoutMs, systemPrompt.
  */
 export class PromptEnhancerService {
-  constructor(ctx, options, library) {
+  constructor(ctx, options, library, preferences) {
     this.ctx = ctx;
     this.options = options;
     this.library = library;
+    this.preferences = preferences;
+    this.baselines = new Map();
+    this.proposals = new Map();
+  }
+
+  context(sessionId) { return { sessionId, cwd: resolveCwd(this.ctx, sessionId) }; }
+
+  prune() {
+    for (const map of [this.baselines, this.proposals]) {
+      for (const [id, item] of map) if (item.expires < Date.now()) map.delete(id);
+      while (map.size >= 100) map.delete(map.keys().next().value);
+    }
+  }
+
+  async preferenceAction(request, signal, user = false) {
+    if (request.sessionId !== undefined && !this.ctx.agents.get(request.sessionId)) throw codedError('preference-context', 'The session is unavailable. Reopen it before reviewing preferences.');
+    const context = this.context(request.sessionId);
+    const guard = () => {
+      signal?.throwIfAborted();
+      if (request.sessionId !== undefined && !this.ctx.agents.get(request.sessionId)) throw codedError('preference-context', 'The session is unavailable. Reopen it before reviewing preferences.');
+      if (projectKey(this.context(request.sessionId).cwd) !== projectKey(context.cwd)) throw codedError('preference-baseline', 'The workspace changed. Review preferences again.');
+    };
+    guard();
+    if (request.action === 'list-preferences') return this.preferences.list(context);
+    if (request.action === 'delete-preference') return this.preferences.mutate(request, context, false, guard);
+    if (!user) throw codedError('preference-user-only', 'Review and confirmation require the user interface.');
+    this.prune();
+    if (request.action === 'infer') {
+      const baseline = this.baselines.get(request.baselineId);
+      if (!baseline || baseline.sessionId !== request.sessionId || baseline.cwd !== projectKey(context.cwd)) throw codedError('preference-baseline', 'This result expired or the workspace changed. Enhance the draft again.');
+      const edited = typeof request.text === 'string' ? request.text.trim() : '';
+      if (!edited || edited.length > this.options.maxInputChars) throw codedError('preference-invalid', 'The edited prompt is empty or too long.');
+      const catalog = this.preferences.list(context);
+      const result = await enhancePromptDetailed(this.ctx, JSON.stringify({ generated: baseline.text, edited }), request.sessionId, signal,
+        { ...this.options, inference: true, useProject: false }, 'general');
+      const text = parsePreference(result.enhanced);
+      guard();
+      if (!text) return { text: '', ...catalog };
+      const proposalId = randomUUID();
+      this.proposals.set(proposalId, { sessionId: request.sessionId, cwd: baseline.cwd, expires: Date.now() + 30 * 60_000 });
+      return { proposalId, text, ...catalog };
+    }
+    if (request.action === 'confirm') {
+      const proposal = this.proposals.get(request.proposalId);
+      if (!proposal || proposal.sessionId !== request.sessionId || proposal.cwd !== projectKey(context.cwd)) throw codedError('preference-baseline', 'Review expired or workspace changed. Start again.');
+      signal?.throwIfAborted();
+      const result = await this.preferences.mutate(request, context, true, guard);
+      this.proposals.delete(request.proposalId);
+      return result;
+    }
+    throw codedError('invalid-action', 'Unknown preference operation.');
   }
 
   async enhance(request, signal) {
@@ -360,10 +413,17 @@ export class PromptEnhancerService {
     if (typeof request.provider === 'string' && request.provider.trim()) options.provider = request.provider.trim();
     if (typeof request.model === 'string' && request.model.trim()) options.model = request.model.trim();
     if (typeof request.reasoningEffort === 'string' && request.reasoningEffort.trim()) options.reasoningEffort = request.reasoningEffort.trim();
-    return enhancePromptDetailed(this.ctx, text, request.sessionId, signal, options, request.mode, persona, request.format, request.level);
+    const context = this.context(request.sessionId);
+    options.preferences = this.preferences?.list(context).rules.filter(item => item.active).map(item => item.text) ?? [];
+    const result = await enhancePromptDetailed(this.ctx, text, request.sessionId, signal, options, request.mode, persona, request.format, request.level);
+    this.prune();
+    const baselineId = randomUUID();
+    this.baselines.set(baselineId, { text: result.enhanced, sessionId: request.sessionId, cwd: projectKey(context.cwd), expires: Date.now() + 30 * 60_000 });
+    return { ...result, baselineId };
   }
 
   perform(request, signal) {
+    if (['list-preferences', 'delete-preference', 'confirm', 'infer'].includes(request?.action)) return this.preferenceAction(request, signal);
     return request?.action === 'enhance' ? this.enhance(request, signal) : this.library.act(request);
   }
 }
@@ -372,13 +432,13 @@ export function enhancerTool(service) {
   return {
     name: 'prompt_enhancer',
     deferLoading: true,
-    description: 'Enhance prompt text or manage reusable enhancement personas in this DSH profile. Does not send messages or change the composer.',
+    description: 'Enhance prompts with saved directions; manage personas and list/delete applicable learned preferences. Learning confirmation is user-only. Does not send messages or change the composer.',
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['list', 'save', 'select', 'delete', 'enhance'] },
-        expectedRevision: { type: 'integer', description: 'For save/select/delete, use the revision from list.' },
-        id: { type: 'string', description: 'Persona id from list for select/delete.' },
+        action: { type: 'string', enum: ['list', 'save', 'select', 'delete', 'enhance', 'list-preferences', 'delete-preference'] },
+        expectedRevision: { type: 'integer', description: 'For persona changes use list revision; for delete-preference use list-preferences revision.' },
+        id: { type: 'string', description: 'Id from list for select/delete, or list-preferences for delete-preference.' },
         persona: {
           type: 'object',
           description: 'For save: a reusable direction, never the task or generated result. Omit id to create; include a custom id to edit.',
@@ -411,7 +471,9 @@ export async function apply(ctx, config) {
   const options = resolveOptions(config);
   const domain = await ctx.storageDomain.open(PERSONA_DOMAIN);
   ctx.effect(() => () => domain.close(), 'prompt-enhancer-plus: persona storage');
-  const service = new PromptEnhancerService(ctx, options, new PersonaLibrary(domain.global));
+  const preferenceDomain = await ctx.storageDomain.open(PREFERENCE_DOMAIN);
+  ctx.effect(() => () => preferenceDomain.close(), 'prompt-enhancer-plus: preference storage');
+  const service = new PromptEnhancerService(ctx, options, new PersonaLibrary(domain.global), new PreferenceLibrary(preferenceDomain.global));
   const lifetime = new AbortController();
   ctx.effect(() => () => lifetime.abort(), 'prompt-enhancer-plus: pending requests');
   ctx.effect(() => ctx.connection.fetch.register({
@@ -436,6 +498,17 @@ export async function apply(ctx, config) {
       }
     },
   }), 'prompt-enhancer-plus: persona library route');
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/prompt-enhancer-plus/preferences', methods: ['POST'], requestBody: 'buffered',
+    async fetch(request) {
+      try {
+        const payload = await request.json();
+        return jsonResponse(200, await service.preferenceAction(payload, AbortSignal.any([request.signal, lifetime.signal]), true));
+      } catch (error) {
+        return jsonResponse(error?.code === 'preference-conflict' ? 409 : 400, { error: { code: error?.code ?? 'preference-failed', message: errorMessage(error) } });
+      }
+    },
+  }), 'prompt-enhancer-plus: preference review route');
   const tools = ctx.get('tools');
   if (tools !== undefined) ctx.effect(() => tools.register(enhancerTool(service)), 'prompt-enhancer-plus: agent operations');
 }
