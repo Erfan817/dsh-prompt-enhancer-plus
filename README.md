@@ -145,9 +145,11 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 
 ### Claude Code：原生插件 · Native plugin
 
-推荐 [`claude-code/native-plugin`](claude-code/native-plugin/README.md)：在输入区上方点击「✨ 强化」，审阅并编辑预览，再确认替换草稿。支持三档详细度、复制、取消与撤销，不自动发送。使用宿主当前会话模型和凭据，不需要桌面伴侣、本机 HTTP 服务或额外 API Key；强化仍消耗模型用量。
+推荐 [`claude-code/native-plugin`](claude-code/native-plugin/README.md)：在输入区上方点击品牌图标旁的「强化」，审阅并编辑预览，再确认替换草稿。支持三档详细度、复制、取消与撤销，不自动发送。使用宿主当前会话模型和凭据，不需要桌面伴侣、本机 HTTP 服务或额外 API Key；强化仍消耗模型用量。
 
-*The native function-hooks plugin adds a composer-adjacent button, editable preview and explicit draft replacement. It uses the host model client, with no companion service or separate API key. Model usage still applies.*
+支持从常见本机 Skill 目录发现文字编辑类参考，自动匹配或手选最多三个；可直接对当前预览连续强化，失败和取消保留文本。关闭参考后不加载正文；不执行 Skill 脚本，参考内容会发送至当前模型。详见[原生插件说明](claude-code/native-plugin/README.md)。
+
+*The native function-hooks plugin adds a composer-adjacent button, editable preview, local text-editing Skill references, preview iteration and guarded replacement. It uses the host model client, not a companion service. Model usage applies; Skill bodies are reference data, never executed.*
 
 需要支持 `hooks.modules`、`AbovePrompt`、草稿读写及模型 completion 的 early-access 构建；不是所有 Claude Code 版本都保证兼容。开发加载和验证见 [Claude Code 指南](claude-code/README.md)。
 

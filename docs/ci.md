@@ -21,7 +21,7 @@ GitHub Actions 工作流：`.github/workflows/ci.yml`。
 
 所有测试使用模拟模型，不配置 Anthropic API Key、登录凭据或其他 repository secrets，不调用真实模型。工作流仅授予 `contents: read`，不发布包、不部署、不自动合并。使用 `pull_request` 而非 `pull_request_target`，checkout 不保留凭据，Actions 固定到 commit SHA。
 
-安装使用 lockfile 和 `npm ci --ignore-scripts`，跳过依赖生命周期脚本。测试会执行仓库代码，来自不可信贡献者的工作流运行仍应按 GitHub 的审批提示处理。
+项目依赖使用 lockfile 和 `npm ci --ignore-scripts`，跳过生命周期脚本。唯一例外是固定版本的 Claude Code 测试引擎：必须运行其 postinstall，把平台二进制链接/复制到命令入口，否则 `claude --version` 就会报 native binary not installed。测试会执行仓库代码，来自不可信贡献者的工作流运行仍应按 GitHub 的审批提示处理。
 
 ## 本地与云端分工
 

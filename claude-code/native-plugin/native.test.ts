@@ -25,6 +25,9 @@ function host(on: On, respond?: (e: ModelCompleteInput) => Promise<ModelComplete
     h.fills.push(e.text)
     return { isFilled: true }
   })
+  on('session.cwd', () => ({ value: '/project' }))
+  on('env.get', () => ({ value: undefined }))
+  on('fs.exists', () => ({ value: false }))
   on('session.model', () => ({ value: 'test-session-model' }))
   on('model.complete', async (_, e) => {
     h.requests.push(e)

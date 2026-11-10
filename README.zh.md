@@ -59,6 +59,8 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 
 推荐原生 [`claude-code/native-plugin`](claude-code/native-plugin/README.md)：输入区上方按钮 → 可编辑预览 → 确认替换，不自动发送。使用宿主当前模型和凭据，不依赖桌面伴侣、HTTP 服务或额外 API Key，但仍消耗模型用量。需要支持 function hooks 的构建，详见 [Claude Code 指南](claude-code/README.md)。
 
+原生插件 0.2.0 增加本机文字编辑 Skill 的自动匹配/手选，以及「再次强化预览」。参考内容会发送给当前模型，不执行 Skill 脚本；失败或取消保留预览，原草稿变化后不可覆盖。
+
 旧 `/enhance` 命令和可选 `UserPromptSubmit` hook 保留兼容，仍依赖本机服务；传统 hook 只能追加上下文，不能替换原文。
 
 #### 任意软件（Windows）

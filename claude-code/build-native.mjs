@@ -12,7 +12,7 @@ const root = path.dirname(directory);
 if (process.argv.includes('--import-dev')) {
   const source = process.argv[process.argv.indexOf('--import-dev') + 1];
   if (!source) throw new Error('Provide the development mod folder after --import-dev.');
-  const files = ['.claude-plugin/plugin.json', 'hooks/hooks.json', 'hooks/register.tsx', 'types/index.d.ts', 'README.md', 'native.test.ts', 'layout.test.ts'];
+  const files = ['.claude-plugin/plugin.json', 'hooks/hooks.json', 'hooks/register.tsx', 'types/index.d.ts', 'README.md', 'native.test.ts', 'layout.test.ts', 'skills.test.ts', 'reference-limits.test.ts', 'hooks/skills.ts'];
   for (const file of files) {
     const destination = path.join(target, file);
     await mkdir(path.dirname(destination), { recursive: true });
