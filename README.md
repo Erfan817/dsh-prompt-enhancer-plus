@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.6.0-4C6FFF">
+  <img alt="version" src="https://img.shields.io/badge/version-1.6.2-4C6FFF">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-2EA043">
   <img alt="node" src="https://img.shields.io/badge/node-%E2%89%A522-339933">
   <img alt="dsh" src="https://img.shields.io/badge/DSH-%E2%89%A50.2.2--rc.1-5B8DEF">
@@ -27,6 +27,8 @@
 **中文：** 大多数提示词工具只是让提示词“读起来更顺”。Prompt Spark 追求的是**可执行**：结果既结构化到下游模型能稳定解析，又自然到人可以直接阅读。一个核心，多个入口 —— dsh 的输入框按钮、VS Code/Cursor 的底部面板、Claude Code 的 `/enhance`、任意软件的全局热键。不会自动发送任何内容。
 
 **English:** Most prompt tools make a prompt *sound* better. Prompt Spark makes it **executable**: structured enough for a downstream model to parse, natural enough for a human to read. One core, many entry points — a composer button in dsh, a bottom panel in VS Code/Cursor, `/enhance` in Claude Code, a global hotkey for any app. Nothing is sent automatically.
+
+**强化速度说明 · Enhancement latency:** 中文：DSH 强化使用当前会话模型路由，不切换供应商；辅助请求默认尝试最低推理档（模型支持时优先 `off`），30 秒超时。若当前 route 返回 Credits exhausted (429)、只输出 reasoning 或迟迟没有正文，请先检查该 route 的可用额度和模型输出。<br>English: DSH enhancement uses the current session model route and never switches providers. It requests the lowest supported reasoning effort (preferring `off`) and times out after 30 seconds. If the route returns Credits exhausted (429), reasoning without text, or no timely response, check that route's credits and output behavior.
 
 ## 功能亮点 · Highlights
 
