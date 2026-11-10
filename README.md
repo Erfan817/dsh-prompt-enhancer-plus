@@ -351,6 +351,10 @@ DSH 使用 Composer 插槽；Claude Code 原生插件使用兼容构建的 `Abov
 
 ## 开发与测试 · Development
 
+[GitHub Actions 云端 CI](docs/ci.md) 在 PR 与 `main` 更新时运行回归、资源一致性、服务 smoke test 和打包检查；Windows 任务另运行固定 Claude Code 测试引擎的原生插件测试。无需模型密钥，不调用真实模型。本地通常只需运行针对性测试，完整回归交给 PR。
+
+*GitHub Actions runs regression and packaging checks on PRs and main updates, plus pinned native plugin tests. No model credentials or real model calls are used. See the [CI guide](docs/ci.md) for coverage and limitations.*
+
 ```sh
 npm install --ignore-scripts
 npm test
