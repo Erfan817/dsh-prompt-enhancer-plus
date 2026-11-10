@@ -1,6 +1,34 @@
 # Claude Code 集成（Prompt Spark）
 
-Claude Code 桌面版 / CLI **没有公开的 UI 扩展 API**，无法像 dsh 那样在输入框下方加按钮。官方允许的等价路径是**自定义斜杠命令**（以及可选的 hook）。
+## 原生插件（推荐，需宿主支持 function hooks）
+
+新增 [`native-plugin/`](native-plugin/README.md)：输入区上方「✨ 强化」→ 可编辑预览 → 确认替换草稿，可复制、取消和撤销，不自动发送。复用根目录 `prompt-core.js`，通过宿主 `$.model.complete` 调用当前会话模型，不需要 Electron、本机 HTTP 服务、CLI 中介或额外 API Key；调用仍按宿主凭据计量。
+
+这是原生 function hooks 插件，不是 Skill。开发依据本环境生成的 Claude Code 2.1.321 early-access 接口；需要宿主支持 `hooks.modules`、`AbovePrompt`、`$.prompt.read/fill` 和 `$.model.complete`，不能保证所有版本或桌面部署都支持。验证通过不等同于已在真实桌面 Composer 完成端到端测试。安装、使用和能力边界见 [原生插件指南](native-plugin/README.md)。
+
+从源码在交互式终端试用（不修改全局配置）：
+
+```bash
+claude --plugin-dir ./claude-code/native-plugin
+```
+
+同步规则、验证及模拟测试：
+
+```bash
+npm run claude:build
+```
+
+```bash
+npm run claude:validate
+```
+
+```bash
+npm run claude:test
+```
+
+## 旧版本接入（可选，仍依赖本机服务）
+
+以下命令／传统 `UserPromptSubmit` hook 保留兼容，不是新原生插件的前置条件。传统命令 hook 没有原生按钮能力，不能与新的 function hooks 接口混淆。
 
 本仓库提供：
 
@@ -53,7 +81,7 @@ Claude Code 桌面版 / CLI **没有公开的 UI 扩展 API**，无法像 dsh �
 
 ## 更接近“一键”的替代方案
 
-Claude Code 桌面版无法加按钮，推荐组合：
+如果宿主不支持原生 function hooks，可选旧热键组合（并非原生集成）：
 
 1. 保持 `npm run desktop` 的本地服务运行；
 2. 用 `hotkey-tool/` 的全局热键（Ctrl+Alt+E）：在任意输入框选中文字 → 强化 → 写回剪贴板；

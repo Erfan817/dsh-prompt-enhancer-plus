@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { loadSkillContext, listSkillChoices, validateSkillNames, skillReferenceBlock } from './skill-context.js';
 import { PREFERENCE_DOMAIN, PreferenceLibrary, INFERENCE_SYSTEM, parsePreference, projectKey } from './preferences.js';
 import { PERSONA_DOMAIN, PERSONA_FIELDS, PersonaLibrary } from './personas.js';
 import { enhancementSystem, inputFor, normalizeEnhancedText, resolveFormat, resolveLevel, resolveMode } from './prompt-core.js';
@@ -228,13 +229,22 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
     throw error;
   }
   guard();
-  const projectContext = await loadProjectContext(ctx, sessionId, options);
+  const projectContext = await loadProjectContext(ctx, sessionId, { ...options, signal: callSignal });
+  guard();
+  let skillData;
+  try {
+    skillData = options.inference ? { context: '', metadata: { status: 'disabled', skills: [] } }
+      : await loadSkillContext(ctx, text, sessionId, resolveCwd(ctx, sessionId), callSignal, options.useSkills !== false, options.skillNames);
+  } catch (error) {
+    guard();
+    throw error;
+  }
   guard();
   const messages = [{
     role: 'user',
     content: [{ type: 'text', text: inputFor(text) }],
   }];
-  const system = options.inference ? INFERENCE_SYSTEM : enhancementSystem({ ...options, format: resolvedFormat, projectContext }, resolvedMode, personaSnapshot, resolvedLevel);
+  const system = options.inference ? INFERENCE_SYSTEM : enhancementSystem({ ...options, format: resolvedFormat, projectContext, skillContext: skillReferenceBlock(skillData.context) }, resolvedMode, personaSnapshot, resolvedLevel);
   callSignal.throwIfAborted();
   let output = '';
   let blockText = '';
@@ -282,6 +292,7 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
     elapsedMs: Date.now() - startedAt,
     model: { provider: route.provider, model: route.model },
     persona: personaSnapshot ?? null,
+    skillContext: skillData.metadata,
   };
 }
 
@@ -325,7 +336,7 @@ async function handleEnhance(service, request) {
   const level = resolveLevel(payload?.level);
   const useProject = typeof payload?.useProject === 'boolean' ? payload.useProject : undefined;
   try {
-    const result = await service.enhance({ text, sessionId, mode, format, level, useProject, personaId: payload?.personaId }, request.signal);
+    const result = await service.enhance({ text, sessionId, mode, format, level, useProject, useSkills: payload?.useSkills, skillNames: payload?.skillNames, personaId: payload?.personaId }, request.signal);
     return jsonResponse(200, result);
   } catch (error) {
     return jsonResponse(502, {
@@ -400,6 +411,11 @@ export class PromptEnhancerService {
     throw codedError('invalid-action', 'Unknown preference operation.');
   }
 
+  listSkills(request, signal) {
+    const context = this.context(request.sessionId);
+    return listSkillChoices(this.ctx, typeof request.text === 'string' ? request.text.slice(0, this.options.maxInputChars) : '', request.sessionId, context.cwd, signal);
+  }
+
   async enhance(request, signal) {
     const text = typeof request.text === 'string' ? request.text.trim() : '';
     if (!text) throw codedError('empty-input', 'Enter some text to enhance first.');
@@ -408,8 +424,9 @@ export class PromptEnhancerService {
       throw codedError('invalid-persona', 'Choose a persona id.');
     }
     const persona = this.library.resolve(request.personaId);
-    const options = { ...this.options };
+    const options = { ...this.options, skillNames: validateSkillNames(request.skillNames) };
     if (request.useProject === true || request.useProject === false) options.useProject = request.useProject;
+    if (request.useSkills === true || request.useSkills === false) options.useSkills = request.useSkills;
     if (typeof request.provider === 'string' && request.provider.trim()) options.provider = request.provider.trim();
     if (typeof request.model === 'string' && request.model.trim()) options.model = request.model.trim();
     if (typeof request.reasoningEffort === 'string' && request.reasoningEffort.trim()) options.reasoningEffort = request.reasoningEffort.trim();
@@ -423,6 +440,7 @@ export class PromptEnhancerService {
   }
 
   perform(request, signal) {
+    if (request?.action === 'list-skills') return this.listSkills(request, signal);
     if (['list-preferences', 'delete-preference', 'confirm', 'infer'].includes(request?.action)) return this.preferenceAction(request, signal);
     return request?.action === 'enhance' ? this.enhance(request, signal) : this.library.act(request);
   }
@@ -436,7 +454,7 @@ export function enhancerTool(service) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['list', 'save', 'select', 'delete', 'enhance', 'list-preferences', 'delete-preference'] },
+        action: { type: 'string', enum: ['list', 'save', 'select', 'delete', 'enhance', 'list-preferences', 'delete-preference', 'list-skills'] },
         expectedRevision: { type: 'integer', description: 'For persona changes use list revision; for delete-preference use list-preferences revision.' },
         id: { type: 'string', description: 'Id from list for select/delete, or list-preferences for delete-preference.' },
         persona: {
@@ -452,6 +470,8 @@ export function enhancerTool(service) {
         format: { type: 'string', enum: ['plain', 'markdown'], description: 'For enhance: plain text by default; optionally Markdown.' },
         level: { type: 'string', enum: ['concise', 'standard', 'detailed'], description: 'For enhance: expansion level. Defaults to standard.' },
         useProject: { type: 'boolean', description: 'For enhance: read project files (AGENTS.md, CLAUDE.md, README, package.json) as reference context. Defaults to true.' },
+        useSkills: { type: 'boolean', description: 'For enhance: match session-visible model-invocable Skills and read up to three bodies as rewrite references. Defaults to true; never executes Skills.' },
+        skillNames: { type: 'array', items: { type: 'string' }, maxItems: 3, description: 'For enhance: exact names from list-skills; omit for auto matching, empty array for no Skills. At most three.' },
         personaId: { type: 'string', description: 'For enhance: omit to use the profile default; empty string uses no persona.' },
       },
       required: ['action'],
@@ -509,6 +529,17 @@ export async function apply(ctx, config) {
       }
     },
   }), 'prompt-enhancer-plus: preference review route');
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/prompt-enhancer-plus/skills', methods: ['POST'], requestBody: 'buffered',
+    async fetch(request) {
+      try {
+        const payload = await request.json();
+        return jsonResponse(200, await service.listSkills(payload, AbortSignal.any([request.signal, lifetime.signal])));
+      } catch (error) {
+        return jsonResponse(400, { error: { code: 'skills-failed', message: errorMessage(error) } });
+      }
+    },
+  }), 'prompt-enhancer-plus: Skill choices route');
   const tools = ctx.get('tools');
   if (tools !== undefined) ctx.effect(() => tools.register(enhancerTool(service)), 'prompt-enhancer-plus: agent operations');
 }

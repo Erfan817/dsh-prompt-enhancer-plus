@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { PREFERENCE_DOMAIN } from './preferences.js';
 const PREFERENCES_PATH = '/api/prompt-enhancer-plus/preferences';
+const SKILLS_PATH = '/api/prompt-enhancer-plus/skills';
 import { apply, enhancementSystem, enhancePrompt, enhancePromptDetailed, PromptEnhancerService } from './index.js';
 import { enhancementSystem as coreEnhancementSystem } from './prompt-core.js';
 import { PERSONA_DOMAIN, PERSONA_FIELDS, PersonaLibrary, personaDirection } from './personas.js';
@@ -211,11 +212,12 @@ await test('async apply opens persona storage before registering two routes and 
     { path: ENHANCE_PATH, methods: ['POST'], requestBody: 'buffered' },
     { path: PERSONAS_PATH, methods: ['GET', 'POST'], requestBody: 'buffered' },
     { path: PREFERENCES_PATH, methods: ['POST'], requestBody: 'buffered' },
+    { path: SKILLS_PATH, methods: ['POST'], requestBody: 'buffered' },
   ]);
   assert.deepEqual(fixture.serviceLookups, ['tools']);
   assert.equal(fixture.tools.length, 1);
   assert.equal(fixture.tools[0].name, 'prompt_enhancer');
-  assert.deepEqual(fixture.tools[0].parameters.properties.action.enum, ['list', 'save', 'select', 'delete', 'enhance', 'list-preferences', 'delete-preference']);
+  assert.deepEqual(fixture.tools[0].parameters.properties.action.enum, ['list', 'save', 'select', 'delete', 'enhance', 'list-preferences', 'delete-preference', 'list-skills']);
   assert.deepEqual(fixture.tools[0].parameters.required, ['action']);
   assert.deepEqual(fixture.tools[0].parameters.properties.format.enum, ['plain', 'markdown']);
   assert.match(fixture.tools[0].parameters.properties.format.description, /plain text by default/u);
@@ -226,14 +228,14 @@ await test('async apply opens persona storage before registering two routes and 
   assert.equal(fixture.closed, 0);
   await fixture.dispose();
   assert.equal(fixture.closed, 2);
-  assert.deepEqual(fixture.removedRoutes.sort(), [ENHANCE_PATH, PERSONAS_PATH, PREFERENCES_PATH].sort());
+  assert.deepEqual(fixture.removedRoutes.sort(), [ENHANCE_PATH, PERSONAS_PATH, PREFERENCES_PATH, SKILLS_PATH].sort());
   assert.deepEqual(fixture.removedTools, ['prompt_enhancer']);
 });
 
 await test('missing optional tools are supported and failed storage initialization registers nothing', async () => {
   const optional = makeCtx({ tools: false });
   await apply(optional.ctx);
-  assert.equal(optional.routes.length, 3);
+  assert.equal(optional.routes.length, 4);
   assert.equal(optional.tools.length, 0);
   assert.deepEqual(optional.serviceLookups, ['tools']);
   const failure = new Error('Storage could not open');
@@ -571,7 +573,7 @@ await test('route and tool default to plain and opt in to Markdown with matching
     const fromTool = await executeTool(fixture, { ...request, action: 'enhance' });
     assert.equal(fromRoute.status, 200);
     assert.deepEqual(withoutElapsed(fromRoute.body), withoutElapsed(fromTool));
-    assert.deepEqual(Object.keys(fromRoute.body).sort(), ['baselineId', 'enhanced', 'mode', 'format', 'usage', 'elapsedMs', 'model', 'persona'].sort());
+    assert.deepEqual(Object.keys(fromRoute.body).sort(), ['baselineId', 'enhanced', 'mode', 'format', 'usage', 'elapsedMs', 'model', 'persona', 'skillContext'].sort());
     assert.equal(fromRoute.body.format, expectedFormat);
     assert.equal(fromRoute.body.enhanced, expectedFormat === 'markdown' ? output : plain);
     assert.equal(fromRoute.body.mode, 'task');
@@ -678,7 +680,8 @@ await test('model routing preserves session overrides while allowing explicit fa
     const fixture = makeCtx({ agent, modelInfo: { reasoning: { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] } } });
     const result = await enhancePromptDetailed(fixture.ctx, 'Use this session route', 'session-route', undefined);
     assert.deepEqual(result.model, expected);
-    assert.deepEqual(fixture.agentLookups, ['session-route']);
+    assert.ok(fixture.agentLookups.length >= 1);
+    assert.ok(fixture.agentLookups.every(id => id === 'session-route'));
     assert.equal(fixture.prepareCalls[0].config.provider, expected.provider);
     assert.equal(fixture.prepareCalls[0].config.model, expected.model);
     assert.equal(fixture.streamCalls[0].reasoningEffort, 'off');
@@ -691,7 +694,7 @@ await test('model routing preserves session overrides while allowing explicit fa
   assert.deepEqual(pinned.model, { provider: 'fast-provider', model: 'fast-model' });
   assert.equal(explicit.prepareCalls[0].config.provider, 'fast-provider');
   assert.equal(explicit.prepareCalls[0].config.model, 'fast-model');
-  assert.equal(explicit.agentLookups.length, 0);
+  assert.ok(explicit.agentLookups.every(id => id === 'session-pinned'));
   const explicitEffort = makeCtx({ modelInfo: { reasoning: { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] } } });
   await enhancePromptDetailed(explicitEffort.ctx, 'Quick rewrite', undefined, undefined, {
     reasoningEffort: 'off',
@@ -822,4 +825,30 @@ await test('timeout while awaiting model output reports actionable model guidanc
   );
 });
 
+await test('Skill choices and manual selection share UI/tool contracts without leaking bodies', async () => {
+  const fixture = makeCtx({ agent: { session: {} } });
+  const originalGet = fixture.ctx.get;
+  const definition = { name: 'humanizer', description: '去 AI 味', content: 'PRIVATE_SKILL_BODY', source: 'user-dsh', invocation: { modelInvocable: true, userInvocable: true } };
+  let loads = 0;
+  fixture.ctx.get = key => key === 'skills' ? {
+    snapshot: async () => ({ complete: true, skills: [definition] }),
+    get: async () => { loads++; return definition; },
+  } : originalGet(key);
+  await apply(fixture.ctx);
+  const request = { sessionId: 'session-1', text: '去 AI 味' };
+  const choices = await callRoute(routeFor(fixture, SKILLS_PATH), request);
+  assert.equal(choices.status, 200);
+  assert.deepEqual(choices.body, await executeTool(fixture, { action: 'list-skills', text: request.text }));
+  assert.equal(loads, 0);
+  assert.doesNotMatch(JSON.stringify(choices.body), /PRIVATE_SKILL_BODY/);
+  const route = await callRoute(routeFor(fixture), { ...request, text: '别的任务', skillNames: ['humanizer'] });
+  const tool = await executeTool(fixture, { action: 'enhance', text: '别的任务', skillNames: ['humanizer'] });
+  assert.deepEqual(route.body.skillContext, tool.skillContext);
+  assert.equal(tool.skillContext.skills[0].name, 'humanizer');
+  assert.equal(loads, 2);
+  const before = fixture.prepareCalls.length;
+  const invalid = await callRoute(routeFor(fixture), { ...request, skillNames: ['a', 'b', 'c', 'd'] });
+  assert.equal(invalid.body.error.code, 'invalid-skills');
+  assert.equal(fixture.prepareCalls.length, before);
+});
 console.log(`host tests passed (${passed} cases)`);

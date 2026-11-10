@@ -1,0 +1,2 @@
+// Generated from the repository icon.svg.
+export const BRAND_ICON = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\">\n  <rect x=\"6\" y=\"6\" width=\"52\" height=\"52\" rx=\"14\" fill=\"#4d6bfe\"/>\n  <path d=\"M30 14l3.4 9.6 9.6 3.4-9.6 3.4L30 40l-3.4-9.6L17 27l9.6-3.4L30 14Z\" fill=\"#ffffff\"/>\n  <path d=\"M46 36l1.9 5.1 5.1 1.9-5.1 1.9L46 50l-1.9-5.1-5.1-1.9 5.1-1.9L46 36Z\" fill=\"#dbe4ff\"/>\n</svg>\n";

@@ -6,7 +6,7 @@ let definition;
 let helpers;
 let fetchImpl;
 const source = fs.readFileSync(new URL('./client.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const instrumented = source.replace("    return {\n      inject: ['slots', 'locale'],", "    capture({ createStore, createPersonaStore, requestEnhance, createOverlayBridge, createSessionController, normalizeFormat, personaName, localizedError, STYLES, EN, ZH });\n    return {\n      inject: ['slots', 'locale'],");
+const instrumented = source.replace("    return {\n      inject: ['slots', 'locale'],", "    capture({ createStore, createPersonaStore, requestEnhance, createOverlayBridge, createSessionController, normalizeFormat, normalizeSkillContext, PersonaRail, SkillReferences, personaName, localizedError, STYLES, EN, ZH });\n    return {\n      inject: ['slots', 'locale'],");
 assert.notEqual(source, instrumented);
 const memory = new Map();
 const sandbox = {
@@ -19,7 +19,14 @@ const sandbox = {
   Date, JSON, console, AbortController, Error,
 };
 vm.runInNewContext(instrumented, sandbox);
-const plugin = definition.factory((name) => { assert.equal(name, 'react'); return {}; });
+const plugin = definition.factory((name) => {
+  assert.equal(name, 'react');
+  return {
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
+    useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useEffect() {},
+  };
+});
 assert.equal(definition.id, 'dsh-prompt-enhancer-plus');
 const registrations = [];
 const disposers = [];
@@ -109,6 +116,10 @@ assert.equal(legacy.get().history.length, 1);
 assert.equal(legacy.get().persona, null);
 assert.equal(legacy.get().history[0].persona, undefined);
 assert.equal(legacy.get().history[0].format, 'plain');
+assert.equal(legacy.get().useSkills, true);
+assert.equal(legacy.get().skillContext, null);
+assert.equal(legacy.get().history[0].useSkills, true);
+assert.equal(legacy.get().history[0].skillContext, null);
 assert.equal(requests.get().format, 'plain');
 assert.equal(requests.get().history[0].format, 'plain');
 assert.equal(helpers.normalizeFormat('markdown'), 'markdown');
@@ -217,6 +228,71 @@ const makeSession = (sessionId, initialDraft = 'Original task') => {
   fixtures.push(fixture);
   return fixture;
 };
+
+const skillContext = {
+  status: 'partial', skills: [{ name: 'review', description: 'Review guidance', source: 'project', truncated: true, body: 'SKILL_BODY_SECRET' }],
+  warnings: ['Some references unavailable'], body: 'CONTEXT_BODY_SECRET',
+};
+const skillsSession = makeSession('skills');
+const rail = helpers.PersonaRail({ snapshot: skillsSession.snapshot(), actions: skillsSession.controller.actions,
+  library: { get: () => ({ ready: true, personas: [], selectedId: '' }), subscribe: () => () => {} }, t: key => key });
+const skillToggle = rail.children[0].children[0];
+assert.equal(skillToggle.type, 'input');
+assert.equal(skillToggle.props.checked, true);
+skillToggle.props.onChange({ target: { checked: false } });
+assert.equal(skillsSession.store.get().useSkills, false, 'sidebar toggle is available before first enhancement');
+assert.equal(skillsSession.store.get().useProject, true, 'Skill and project switches are independent');
+let skillBody;
+fetchImpl = async (_url, options) => { skillBody = JSON.parse(options.body); return response({ enhanced: 'Skill result', skillContext }); };
+await skillsSession.controller.actions.start();
+assert.equal(skillBody.useSkills, false);
+assert.equal(skillBody.useProject, true);
+assert.equal(skillsSession.store.get().skillContext.status, 'disabled');
+await skillsSession.controller.actions.rerun({ useSkills: true, useProject: false });
+assert.equal(skillBody.useSkills, true);
+assert.equal(skillBody.useProject, false);
+assert.equal(skillsSession.store.get().skillContext.status, 'partial');
+assert.equal(skillsSession.store.get().skillContext.skills[0].truncated, true);
+assert.ok(!JSON.stringify(skillsSession.store.get().skillContext).includes('BODY_SECRET'));
+assert.ok(!memory.get('dsh-prompt-enhancer-plus:history:skills').includes('BODY_SECRET'));
+const skillHistory = helpers.createStore('skills').get().history;
+const savedSkills = skillHistory[0];
+assert.equal(savedSkills.useSkills, true);
+skillsSession.controller.actions.openHistory(skillHistory[1]);
+assert.equal(skillsSession.store.get().useSkills, false, 'disabled choice survives history persistence and opening');
+assert.equal(skillsSession.store.get().skillContext.status, 'disabled');
+skillsSession.controller.actions.setUseSkills(false);
+skillsSession.controller.actions.openHistory(savedSkills);
+assert.equal(skillsSession.store.get().useSkills, true);
+assert.equal(skillsSession.store.get().useProject, false);
+assert.equal(skillsSession.store.get().skillContext.skills[0].name, 'review');
+await skillsSession.controller.actions.rerun({ format: 'markdown' });
+assert.equal(skillBody.useSkills, true, 'reruns retain restored choice');
+for (const status of ['matched', 'none', 'disabled', 'unavailable', 'partial']) {
+  const normalized = helpers.normalizeSkillContext({ status, skills: [], warnings: ['Warning', 12] });
+  const rendered = helpers.SkillReferences({ context: normalized, t: key => helpers.EN[key] });
+  assert.ok(JSON.stringify(rendered).includes(helpers.EN[`skill${status}`]));
+  assert.ok(helpers.ZH[`skill${status}`]);
+  assert.equal(normalized.warnings.length, 1);
+}
+assert.equal(helpers.normalizeSkillContext({ status: 'invented', skills: [] }), null);
+const pendingSkills = deferred();
+fetchImpl = () => pendingSkills.promise;
+const skillRerun = skillsSession.controller.actions.rerun({});
+assert.equal(skillsSession.store.get().skillContext, null, 'new request immediately clears old reference metadata');
+pendingSkills.resolve(response({ enhanced: 'No metadata' }));
+await skillRerun;
+assert.equal(skillsSession.store.get().skillContext, null, 'missing Host metadata does not claim Skill usage');
+skillsSession.controller.actions.openHistory({ original: 'legacy', enhanced: 'Legacy result' });
+assert.equal(skillsSession.store.get().useSkills, true);
+assert.equal(skillsSession.store.get().skillContext, null);
+
+let directSkillBody;
+fetchImpl = async (_url, options) => { directSkillBody = JSON.parse(options.body); return response({ enhanced: 'Direct' }); };
+await helpers.requestEnhance(helpers.createStore('direct-skills'), params());
+assert.equal(directSkillBody.useSkills, true, 'requestEnhance defaults to enabled');
+await helpers.requestEnhance(helpers.createStore('direct-skills-off'), params({ useSkills: false }));
+assert.equal(directSkillBody.useSkills, false);
 
 let enhanceBody;
 fetchImpl = async (_url, options) => {
@@ -458,4 +534,4 @@ for (const fixture of fixtures) fixture.dispose();
 library.dispose();
 for (const dispose of disposers.reverse()) if (typeof dispose === 'function') await dispose();
 await tick();
-console.log('Client state tests passed: root/session slot bridge, bilingual labels, plain/Markdown formats, editable text, five-entry legacy history, stale revisions, sending protection, ten-second undo, cancellation, disposal and persona conflicts. No React or DOM rendering was simulated.');
+console.log('Client state tests passed: slot bridge, bilingual labels, Skill reference defaults/sidebar toggle/POST/reruns/metadata-only history/statuses/reset, formats, editable text, legacy history, stale revisions, sending protection, undo, cancellation, disposal and persona conflicts. UI element structure was checked with a minimal React stub; no browser DOM rendering was performed.');

@@ -47,6 +47,11 @@ window.__ModuleLoader__.load({
       modeConcise: 'Concise',
       levelLabel: 'Length', levelConcise: 'Concise', levelStandard: 'Standard', levelDetailed: 'Detailed',
       projectLabel: 'Project-aware', projectHint: 'Read AGENTS.md/README/package.json from the workspace',
+      skillsLabel: 'Reference Skills', skillsHint: 'Include relevant Skill guidance in the next enhancement, independently of project awareness. This does not execute Skills or guarantee the model follows them.',
+      skillReference: 'Skill references', skillUnknown: 'No Skill reference metadata was recorded for this result.',
+      skillmatched: 'Relevant Skill guidance was provided as reference.', skillnone: 'No relevant Skills matched.',
+      skilldisabled: 'Skill references were disabled.', skillunavailable: 'Skill references were unavailable.',
+      skillpartial: 'Skill references were only partially available.', skillTruncated: 'Truncated', skillWarnings: 'Warnings',
       usageUnknown: 'usage unavailable',
       personas: 'Personas', personaTitle: 'Enhancement personas', noPersona: 'No persona',
       personaHint: 'Save how prompts should be improved, not the task itself. Only enhancement calls use these directions.',
@@ -118,6 +123,11 @@ window.__ModuleLoader__.load({
       modeConcise: '简洁润色',
       levelLabel: '长度档', levelConcise: '简洁', levelStandard: '标准', levelDetailed: '详细',
       projectLabel: '项目感知', projectHint: '从工作区读取 AGENTS.md/README/package.json 作为背景',
+      skillsLabel: '参考 Skill', skillsHint: '下次强化时加入相关 Skill 指引，与项目感知独立；不会执行 Skill，也不保证模型遵循指引。',
+      skillReference: '参考 Skill', skillUnknown: '此结果未记录参考 Skill 元数据。',
+      skillmatched: '已提供相关 Skill 指引作为参考。', skillnone: '未匹配到相关 Skill。',
+      skilldisabled: '已关闭参考 Skill。', skillunavailable: '参考 Skill 暂不可用。',
+      skillpartial: '参考 Skill 仅部分可用。', skillTruncated: '已截断', skillWarnings: '提示',
       usageUnknown: '用量未知',
       personas: '强化人格', personaTitle: '我的强化人格', noPersona: '不使用人格',
       personaHint: '这里保存“怎么强化”的方法，不是具体任务。人格只影响强化提示词，不改变主助手。',
@@ -290,6 +300,25 @@ window.__ModuleLoader__.load({
       return LEVELS.includes(level) ? level : 'standard';
     }
 
+    // Keep only reference metadata; never retain Skill bodies or unknown Host fields.
+    function normalizeSkillContext(context) {
+      if (!context || !['matched', 'none', 'disabled', 'unavailable', 'partial'].includes(context.status)) return null;
+      return {
+        status: context.status,
+        skills: Array.isArray(context.skills) ? context.skills.filter(skill => skill && typeof skill.name === 'string').map(skill => ({
+          name: skill.name,
+          ...(typeof skill.description === 'string' ? { description: skill.description } : {}),
+          ...(typeof skill.source === 'string' ? { source: skill.source } : {}),
+          ...(typeof skill.truncated === 'boolean' ? { truncated: skill.truncated } : {}),
+        })) : [],
+        ...(Array.isArray(context.warnings) ? { warnings: context.warnings.filter(warning => typeof warning === 'string') } : {}),
+      };
+    }
+
+    function normalizeSkillNames(names) {
+      return Array.isArray(names) ? [...new Set(names.filter(name => typeof name === 'string' && name.trim()).map(name => name.trim()))].slice(0, 3) : null;
+    }
+
     function historyEntry(entry) {
       return {
         ...entry,
@@ -298,13 +327,17 @@ window.__ModuleLoader__.load({
         mode: normalizeMode(entry.mode),
         format: normalizeFormat(entry.format),
         level: normalizeLevel(entry.level),
+        useProject: entry.useProject !== false,
+        useSkills: entry.useSkills !== false,
+        skillNames: normalizeSkillNames(entry.skillNames),
+        skillContext: normalizeSkillContext(entry.skillContext),
       };
     }
 
     function createStore(sessionId) {
       const historyKey = HISTORY_PREFIX + sessionId;
       let state = {
-        status: 'idle', mode: 'general', format: 'plain', level: 'standard', useProject: true, persona: null,
+        status: 'idle', mode: 'general', format: 'plain', level: 'standard', useProject: true, useSkills: true, skillNames: null, skillCatalog: null, skillsLoading: false, skillContext: null, persona: null,
         editorSeed: undefined, panelView: 'preview', baselineId: null, learning: null, preferenceCatalog: null,
         targetDraft: '', insertion: null, targetInvalidated: false, requestId: 0,
         originalDraft: '', enhanced: '', generated: '', error: '',
@@ -352,22 +385,29 @@ window.__ModuleLoader__.load({
       const format = normalizeFormat(options.format);
       const level = normalizeLevel(options.level);
       const useProject = options.useProject !== false;
-      const requestId = store.get().requestId + 1;
+      const useSkills = options.useSkills !== false;
+      const skillNames = normalizeSkillNames(options.skillNames);
+      const previous = store.get();
+      const preservePreview = options.preservePreview === true;
+      const retainedStatus = preservePreview && previous.enhanced ? 'preview' : 'idle';
+      const requestId = previous.requestId + 1;
       store.update({
-        status: 'busy', panelView: 'preview', mode, format, level, useProject, error: '', undo: null, requestId,
-        originalDraft, targetDraft, insertion, targetInvalidated: false, enhanced: '', generated: '',
+        status: 'busy', panelView: 'preview', mode, format, level, useProject, useSkills, skillNames, skillContext: null, error: '', undo: null, requestId,
+        originalDraft, targetDraft, insertion,
+        targetInvalidated: preservePreview ? previous.targetInvalidated : false,
+        ...(preservePreview ? {} : { enhanced: '', generated: '' }),
       });
       const startedAt = Date.now();
       try {
         const response = await fetch('/api/prompt-enhancer-plus/enhance', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ text, sessionId, mode, personaId, format, level, useProject }),
+          body: JSON.stringify({ text, sessionId, mode, personaId, format, level, useProject, useSkills, skillNames }),
           signal,
         });
         const payload = await response.json().catch(() => null);
         if (store.get().requestId !== requestId) return;
-        if (signal?.aborted) { store.update({ status: 'idle' }); return; }
+        if (signal?.aborted) { store.update({ status: retainedStatus }); return; }
         if (!response.ok) throw new Error(localizedError(payload?.error?.code, payload?.error?.message, t));
         const enhanced = payload?.enhanced;
         if (typeof enhanced !== 'string' || enhanced.trim().length === 0) throw new Error(t('emptyResult'));
@@ -381,7 +421,8 @@ window.__ModuleLoader__.load({
           mode: normalizeMode(payload?.mode ?? mode),
           format: normalizeFormat(payload?.format ?? format),
           level: normalizeLevel(payload?.level ?? level),
-          useProject,
+          useProject, useSkills, skillNames,
+          skillContext: useSkills ? normalizeSkillContext(payload?.skillContext) : { status: 'disabled', skills: [] },
           usage: payload?.usage ?? null,
           elapsedMs: Number.isFinite(payload?.elapsedMs) ? payload.elapsedMs : Date.now() - startedAt,
           model: payload?.model ?? null,
@@ -390,14 +431,14 @@ window.__ModuleLoader__.load({
         store.update(result);
         store.pushHistory({
           original: originalDraft, enhanced: result.enhanced, mode: result.mode, format: result.format,
-          level: result.level,
+          level: result.level, useProject: result.useProject, useSkills: result.useSkills, skillNames: result.skillNames, skillContext: result.skillContext,
           persona: result.persona, usage: result.usage, elapsedMs: result.elapsedMs, model: result.model,
           at: Date.now(),
         });
       } catch (error) {
         if (store.get().requestId !== requestId) return;
-        if (signal?.aborted || error?.name === 'AbortError') { store.update({ status: 'idle' }); return; }
-        store.update({ status: 'error', error: error instanceof Error ? error.message : t('failed') });
+        if (signal?.aborted || error?.name === 'AbortError') { store.update({ status: retainedStatus }); return; }
+        store.update({ status: preservePreview ? retainedStatus : 'error', error: error instanceof Error ? error.message : t('failed') });
       }
     }
 
@@ -569,7 +610,7 @@ window.__ModuleLoader__.load({
             text: previewEdited ? state.enhanced.trim() : input.draft.trim(), originalDraft: input.draft, targetDraft: input.draft,
             insertion: input.inputActions.captureInsertion(),
             mode: store.get().mode, format: store.get().format,
-            level: store.get().level, useProject: store.get().useProject,
+            level: store.get().level, useProject: store.get().useProject, useSkills: store.get().useSkills,
             personaId: library.get().selectedId,
           }, previewEdited ? { id: state.baselineId, text: state.generated } : appliedBaseline);
         },
@@ -580,6 +621,7 @@ window.__ModuleLoader__.load({
             text: state.enhanced !== state.generated ? state.enhanced.trim() : state.originalDraft.trim(), originalDraft: state.originalDraft, targetDraft: state.targetDraft,
             insertion: state.insertion, mode: patch.mode ?? state.mode, format: patch.format ?? state.format,
             level: patch.level ?? state.level, useProject: patch.useProject ?? state.useProject,
+            useSkills: patch.useSkills ?? state.useSkills,
             personaId: state.persona?.id ?? library.get().selectedId,
           }, state.enhanced !== state.generated ? { id: state.baselineId, text: state.generated } : null);
         },
@@ -676,7 +718,9 @@ window.__ModuleLoader__.load({
             originalDraft: saved.original, targetDraft: input.draft,
             insertion: input.inputActions?.captureInsertion() ?? null, targetInvalidated: input.phase !== 'plain',
             persona: saved.persona ?? null, enhanced: saved.enhanced, generated: saved.enhanced,
-            mode: saved.mode, format: saved.format, usage: saved.usage ?? null,
+            mode: saved.mode, format: saved.format, level: saved.level,
+            useProject: saved.useProject, useSkills: saved.useSkills, skillContext: saved.skillContext,
+            usage: saved.usage ?? null,
             elapsedMs: Number.isFinite(saved.elapsedMs) ? saved.elapsedMs : null,
             model: saved.model ?? null, error: '',
           });
@@ -690,6 +734,9 @@ window.__ModuleLoader__.load({
         },
         preview() { if (!disposed) store.update({ panelView: 'preview', editorSeed: undefined }); },
         setUseProject(value) { if (!disposed) store.update({ useProject: value !== false }); },
+        setUseSkills(value) {
+          if (!disposed && store.get().status !== 'busy' && store.get().learning === null) store.update({ useSkills: value !== false });
+        },
         showError(error) { if (!disposed) store.update({ error }); },
       };
       connection = bridge.connect(sessionId, snapshot(), actions);
@@ -982,10 +1029,26 @@ window.__ModuleLoader__.load({
 @media(max-width:620px){.pe-overlay{padding:8px;}.pe-workspace{height:calc(100vh - 16px);height:calc(100dvh - 16px);}.pe-workspace-head,.pe-workspace-footer{padding:12px 16px;}.pe-workspace-body{padding:18px 20px;}.pe-workspace-title{font-size:15px;}.pe-output-controls{gap:12px;}.pe-preview-text{font-size:14px;}.pe-workspace-footer{gap:8px;}.pe-workspace-footer .pe-help{display:none;}}
 `;
 
+    function SkillReferences({ context, t }) {
+      return h('section', { className: 'pe-detail-section', 'aria-label': t('skillReference') },
+        h('h3', null, t('skillReference')),
+        h('p', { className: 'pe-help' }, t(context ? `skill${context.status}` : 'skillUnknown')),
+        ...(context?.skills ?? []).map((skill, index) => h('p', { key: index, className: 'pe-help' },
+          skill.name, skill.description ? ` — ${skill.description}` : '',
+          skill.source ? ` (${skill.source})` : '', skill.truncated ? ` · ${t('skillTruncated')}` : '')),
+        ...(context?.warnings ?? []).map((warning, index) => h('p', { key: `warning-${index}`, className: 'pe-help' }, `${t('skillWarnings')}: ${warning}`)));
+    }
+
     function PersonaRail({ snapshot, actions, library, t }) {
       const { state } = snapshot;
       const catalog = useStore(library);
       return h('aside', { className: 'pe-persona-rail', 'aria-label': t('personaTitle') },
+        h('label', { title: t('skillsHint') }, h('input', {
+          type: 'checkbox', checked: state.useSkills !== false,
+          disabled: state.status === 'busy' || state.learning !== null,
+          onChange: (event) => actions.setUseSkills(event.target.checked),
+        }), t('skillsLabel')),
+        h('p', { className: 'pe-help' }, t('skillsHint')),
         h('h3', null, t('personaTitle')),
         h('select', {
           className: 'pe-persona-list', 'aria-label': t('personaSelected'), value: catalog.selectedId,
@@ -1147,6 +1210,7 @@ window.__ModuleLoader__.load({
                   onChange: (event) => { actions.setUseProject(event.target.checked); },
                 }), t('projectLabel'))),
               h('p', { className: 'pe-help' }, t('rerunHint')),
+              h(SkillReferences, { context: state.skillContext, t }),
               h('p', { className: 'pe-help pe-editor-hint' }, t('editHint')),
               h(AutoGrowingTextarea, {
                 className: 'pe-preview-text', value: state.enhanced, disabled: state.learning !== null, 'aria-label': t('editLabel'), spellCheck: false,
