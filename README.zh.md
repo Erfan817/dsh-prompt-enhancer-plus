@@ -17,7 +17,7 @@
 - **项目感知（DSH）**：读取会话工作区里的 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md` 和 `package.json` 作为参考数据。
 - **可复用人格**：保存产品、工程、写作、极简等“怎么改写”的方向。
 - **可编辑预览**：替换草稿前可全文审阅和修改；提供五条最近记录与十秒撤销。
-- **跨 harness**：DSH 原生按钮、VS Code/Cursor 面板、Claude Code 命令、Windows 全局热键和 CLI 共用规则。
+- **跨 harness**：DSH 原生按钮、Claude Code 原生插件（桌面版与终端）、Codex 桌面编辑面板、VS Code/Cursor 面板、Windows 全局热键和 CLI 共用规则。
 
 ### 快速开始
 
@@ -57,7 +57,7 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 
 #### Claude Code
 
-推荐原生 [`claude-code/native-plugin`](claude-code/native-plugin/README.md)：输入区上方按钮 → 可编辑预览 → 确认替换，不自动发送。使用宿主当前模型和凭据，不依赖桌面伴侣、HTTP 服务或额外 API Key，但仍消耗模型用量。需要支持 function hooks 的构建，详见 [Claude Code 指南](claude-code/README.md)。
+推荐原生 [`claude-code/native-plugin`](claude-code/native-plugin/README.md)：输入区上方按钮 → 可编辑预览 → 确认替换，不自动发送。使用宿主当前模型和凭据，不依赖桌面伴侣、HTTP 服务或额外 API Key，但仍消耗模型用量。桌面版会话可使用宿主插件安装流程；开发时也可在启动前设置 `CLAUDE_CODE_PLUGIN_DIRS` 指向插件目录并完整重启桌面应用。需要支持 function hooks 的构建，详见 [Claude Code 指南](claude-code/README.md)。
 
 原生插件 0.2.0 增加本机文字编辑 Skill 的自动匹配/手选，以及「再次强化预览」。参考内容会发送给当前模型，不执行 Skill 脚本；失败或取消保留预览，原草稿变化后不可覆盖。
 
@@ -150,7 +150,7 @@ npm run desktop:smoke
 npm pack --dry-run
 ```
 
-`npm test` 运行十套无需 Electron、无需真实模型的测试：核心、Host、人格、偏好、Client、项目上下文与等级、桌面 UI、桌面服务 API 与安全、VS Code 客户端、CLI。
+`npm test` 运行十四套无需 Electron、无需真实模型的测试：核心、Host、人格、偏好、Client、项目上下文与等级、桌面 UI、桌面服务 API 与安全、VS Code 客户端、CLI，以及 Codex 插件包、MCP 传输、模拟宿主面板交互和 Windows 悬浮组件状态。
 
 ### 许可证
 
