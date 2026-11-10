@@ -52,7 +52,7 @@
 | **先审阅，再使用**<br>*Review before use* | DSH 支持全文预览和编辑、最近五条记录与十秒撤销；由你决定复制或替换草稿。<br>*DSH provides an editable preview, five recent entries, and ten-second undo. You decide whether to copy or replace.* |
 | **可复用人格与偏好**<br>*Reusable personas & preferences* | 保存产品、工程、写作、极简等改写方向；DSH 还能从手动修改前后的差异中提议可复用偏好，审阅后才保存。<br>*Save rewriting directions and, in DSH, review preferences inferred from your manual edits before anything is stored.* |
 | **项目感知（DSH）**<br>*Project-aware (DSH)* | 可将 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md` 和 `package.json` 作为参考数据，让改写更贴合当前项目。<br>*Use project instruction and metadata files as reference data for more relevant rewrites.* |
-| **一个核心，多个入口**<br>*One core, many entry points* | DSH 和 Claude Code 原生插件复用强化核心及各自宿主的模型接口；旧适配器连接本机服务，规则集中维护。<br>*DSH and native Claude Code use shared rules with host model clients; legacy adapters use the local service.* |
+| **一个核心，多个入口**<br>*One core, many entry points* | DSH 和 Claude Code 原生插件复用强化核心及各自宿主的模型接口；Codex 插件把共享规则交给当前对话模型；旧适配器连接本机服务，规则集中维护。<br>*DSH and native Claude Code use shared rules with host model clients; the Codex plugin hands shared rules to the conversation model; legacy adapters use the local service.* |
 
 ## 看看输出长什么样 · Example
 
@@ -151,7 +151,7 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 
 *The native function-hooks plugin adds a composer-adjacent button, editable preview, local text-editing Skill references, preview iteration and guarded replacement. It uses the host model client, not a companion service. Model usage applies; Skill bodies are reference data, never executed.*
 
-需要支持 `hooks.modules`、`AbovePrompt`、草稿读写及模型 completion 的 early-access 构建；不是所有 Claude Code 版本都保证兼容。开发加载和验证见 [Claude Code 指南](claude-code/README.md)。
+需要支持 `hooks.modules`、`AbovePrompt`、草稿读写及模型 completion 的 early-access 构建；不是所有 Claude Code 版本都保证兼容。桌面版会话可使用宿主的插件安装流程；开发时也可以在启动桌面应用前设置 `CLAUDE_CODE_PLUGIN_DIRS` 指向 `claude-code/native-plugin`（Windows 多个路径用分号分隔），然后完整重启桌面应用。开发加载和验证见 [Claude Code 指南](claude-code/README.md)。
 
 #### 旧命令入口（可选） · Legacy slash command
 
@@ -209,15 +209,16 @@ flowchart LR
     D[Draft / 草稿] --> A{Adapter / 入口}
     A -->|DSH| C[prompt-core.js<br/>one shared rule set]
     A -->|Native Claude Code| C
+    A -->|Codex plugin| C
     A -->|Legacy adapters| L[Local service<br/>POST /api/enhance]
     L --> C
     C --> R[Structured prompt / 结构化提示词]
     R --> U[Review, edit & use<br/>审阅、编辑、使用]
 ```
 
-DSH 和 Claude Code 原生插件直接复用强化规则，由各自宿主执行模型调用。旧面板、CLI、热键及 `/enhance` 适配器仍调用本机服务。Claude Code 插件中的规则副本由 `npm run claude:build` 同步，`--check` 检查漂移。
+DSH 和 Claude Code 原生插件直接复用强化规则，由各自宿主执行模型调用。Codex 桌面插件把共享规则作为改写参考交给当前对话模型完成强化，生成的规则副本由 `npm run codex:build` 产出、`npm run codex:validate` 检查。旧面板、CLI、热键及 `/enhance` 适配器仍调用本机服务。Claude Code 插件中的规则副本由 `npm run claude:build` 同步，`--check` 检查漂移。
 
-*DSH and the native Claude Code plugin use host model clients and shared rules. Legacy adapters still use the loopback service. The native plugin's bundled rules are synchronized by the build script.*
+*DSH and the native Claude Code plugin use host model clients and shared rules. The Codex desktop plugin hands the shared rules to the current conversation model as rewrite references. Legacy adapters still use the loopback service. The native plugin's bundled rules are synchronized by the build script.*
 
 ## 进一步了解 · Advanced details
 
@@ -335,7 +336,7 @@ POST /api/health    → { ok: true, value: { ready: true, version } }
 | **DSH** | Composer 工具栏的 **强化提示词**<br>*Native composer toolbar button* | ✅ |
 | **VS Code** | 底部面板、选中文本命令、`Ctrl+Alt+E` / `Cmd+Alt+E`<br>*Bottom panel, selection command, keyboard shortcut* | ➖ |
 | **Cursor** | 与 VS Code 共用同一个 VSIX<br>*Uses the same VSIX as VS Code* | ➖ |
-| **Claude Code** | 原生 function hooks 插件：输入区上方按钮、预览与回填；旧命令可选<br>*Native plugin on compatible builds; legacy command optional* | ✅ 输入区上方，需兼容构建 |
+| **Claude Code** | 原生 function hooks 插件：输入区上方按钮、预览与回填；桌面版与终端均可用；旧命令可选<br>*Native plugin on compatible builds, desktop and terminal; legacy command optional* | ✅ 输入区上方，需兼容构建 |
 | **Codex 桌面版** | 内嵌编辑面板、三档强化、预览和追加到输入框<br>*Desktop editor panel with preview and explicit composer insertion* | ➖ 面板按钮 |
 | **其他 Windows 应用 · Other Windows apps** | 全局热键与剪贴板<br>*Global hotkey and clipboard* | ➖ |
 | **脚本与终端 · Scripts & terminals** | CLI 或本机 HTTP API<br>*CLI or local HTTP API* | ➖ |
@@ -375,13 +376,13 @@ npm run desktop:smoke
 npm pack --dry-run
 ```
 
-`npm test` 运行十套测试，不需要 Electron，也不调用真实模型，覆盖核心规则、DSH Host/Client、人格与偏好、项目上下文、本机 API 与安全、桌面 UI、VS Code 客户端和 CLI。
+`npm test` 运行十四套测试，不需要 Electron，也不调用真实模型，覆盖核心规则、DSH Host/Client、人格与偏好、项目上下文、本机 API 与安全、桌面 UI、VS Code 客户端、CLI，以及 Codex 插件包、共享规则、MCP 传输、模拟宿主面板交互和 Windows 悬浮组件状态。
 
-*`npm test` runs ten suites without Electron or real model calls. Coverage includes core rules, DSH Host/Client, personas and preferences, project context, local API security, desktop UI logic, the VS Code client, and the CLI.*
+*`npm test` runs fourteen suites without Electron or real model calls. Coverage includes core rules, DSH Host/Client, personas and preferences, project context, local API security, desktop UI logic, the VS Code client, the CLI, plus the Codex plugin package, shared rules, MCP transport, simulated host panel interactions, and Windows overlay state.*
 
-当前工作副本尚未完成真实 VS Code/Cursor 窗口、实际全局热键及 Claude Code 命令执行的视觉或端到端验证。版本变更见 [1.7.0 发布说明](docs/release-1.7.0.md)。
+当前工作副本尚未完成真实 VS Code/Cursor 窗口、实际全局热键、Claude Code 命令执行或 Codex 桌面应用内实际点击与真实模型强化的端到端验证；Codex 悬浮组件目前只通过模拟宿主 bridge 在浏览器中验证过界面与撤销保护。版本变更见 [1.7.0 发布说明](docs/release-1.7.0.md)。
 
-*This working copy has not completed visual or end-to-end verification in real VS Code/Cursor windows, with a physically triggered global hotkey, or through Claude Code command execution. See the [1.7.0 release notes](docs/release-1.7.0.md) for version changes.*
+*This working copy has not completed visual or end-to-end verification in real VS Code/Cursor windows, with a physically triggered global hotkey, through Claude Code command execution, or with real clicks and real model enhancement inside the Codex desktop app; the Codex overlay has only been verified in a browser against a simulated host bridge. See the [1.7.0 release notes](docs/release-1.7.0.md) for version changes.*
 
 ## 许可证 · License
 
