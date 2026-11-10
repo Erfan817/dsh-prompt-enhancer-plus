@@ -87,8 +87,14 @@ const ROUTE_PATH = '/api/prompt-enhancer-plus/enhance';
 const DEFAULT_OPTIONS = Object.freeze({
   maxInputChars: 12000,
   maxOutputTokens: 3000,
-  timeoutMs: 90_000,
+  // An auxiliary rewrite should not wait as long as a normal chat turn. A
+  // slow or reasoning-only model now fails fast instead of hanging for 90s.
+  timeoutMs: 30_000,
   systemPrompt: undefined,
+  provider: undefined,
+  model: undefined,
+  // Keep this auxiliary rewrite lightweight while preserving the session route.
+  reasoningEffort: 'off',
 });
 
 function jsonResponse(status, value) {
@@ -117,6 +123,10 @@ function positiveInteger(value, fallback) {
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback;
 }
 
+function optionalString(value) {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
 function resolveOptions(config) {
   const value = config !== null && typeof config === 'object' ? config : {};
   return {
@@ -126,10 +136,18 @@ function resolveOptions(config) {
     systemPrompt: typeof value.systemPrompt === 'string' && value.systemPrompt.trim().length > 0
       ? value.systemPrompt.trim()
       : undefined,
+    // Pin an auxiliary model so a reasoning-only chat model cannot make
+    // enhancement hang. When omitted, the session's route is reused.
+    provider: optionalString(value.provider),
+    model: optionalString(value.model),
+    reasoningEffort: optionalString(value.reasoningEffort),
   };
 }
 
-function resolveRoute(ctx, sessionId) {
+function resolveRoute(ctx, sessionId, options = {}) {
+  if (options.provider && options.model) {
+    return { provider: options.provider, model: options.model };
+  }
   const agent = sessionId === undefined ? undefined : ctx.agents.get(sessionId);
   const selectedRoute = agent?.model?.current?.();
   if (selectedRoute?.provider && selectedRoute?.model) {
@@ -168,26 +186,52 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
   const resolvedFormat = resolveFormat(format);
   const resolvedLevel = resolveLevel(level);
   const personaSnapshot = persona === undefined ? undefined : structuredClone(persona);
-  const route = resolveRoute(ctx, sessionId);
+  const route = resolveRoute(ctx, sessionId, options);
   if (route === undefined) {
     throw codedError('no-route', 'No model route is available. Choose a model in the composer first.');
   }
   const startedAt = Date.now();
-  const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? DEFAULT_OPTIONS.timeoutMs);
+  const timeoutMs = options.timeoutMs ?? DEFAULT_OPTIONS.timeoutMs;
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const callSignal = signal === undefined ? timeoutSignal : AbortSignal.any([signal, timeoutSignal]);
-  const prepared = await ctx.llm.prepareCall({
-    provider: route.provider,
-    model: route.model,
-    maxTokens: options.maxOutputTokens ?? DEFAULT_OPTIONS.maxOutputTokens,
-  }, callSignal, (controls, modelInfo) => {
-    const effort = modelInfo.reasoning?.efforts?.[0]?.id;
-    return effort === undefined ? controls : { ...controls, reasoningEffort: effort };
-  });
+  const guard = () => {
+    if (timeoutSignal.aborted) {
+      throw codedError('timeout', `Prompt enhancement timed out after ${Math.round(timeoutMs / 1000)}s on ${route.provider}/${route.model}. Choose a faster model or lower its reasoning effort.`);
+    }
+    callSignal.throwIfAborted();
+  };
+  guard();
+  let prepared;
+  try {
+    prepared = await ctx.llm.prepareCall({
+      provider: route.provider,
+      model: route.model,
+      maxTokens: options.maxOutputTokens ?? DEFAULT_OPTIONS.maxOutputTokens,
+    }, callSignal, (controls, modelInfo) => {
+      const { reasoningEffort: _sessionEffort, ...baseControls } = controls;
+      const efforts = Array.isArray(modelInfo?.reasoning?.efforts) ? modelInfo.reasoning.efforts : [];
+      if (options.reasoningEffort !== undefined) {
+        const match = efforts.find((effort) => typeof effort?.id === 'string'
+          && effort.id.toLowerCase() === options.reasoningEffort.toLowerCase());
+        // If the session's effort is not supported here, omit it instead of
+        // accidentally carrying a high/max setting onto the auxiliary call.
+        return match === undefined ? baseControls : { ...baseControls, reasoningEffort: match.id };
+      }
+      const lowest = efforts.find((effort) => effort && typeof effort.id === 'string'
+        && ['off', 'none', 'minimal', 'low'].includes(effort.id.toLowerCase()));
+      return lowest === undefined ? baseControls : { ...baseControls, reasoningEffort: lowest.id };
+    });
+  } catch (error) {
+    guard();
+    throw error;
+  }
+  guard();
+  const projectContext = await loadProjectContext(ctx, sessionId, options);
+  guard();
   const messages = [{
     role: 'user',
     content: [{ type: 'text', text: inputFor(text) }],
   }];
-  const projectContext = await loadProjectContext(ctx, sessionId, options);
   const system = enhancementSystem({ ...options, format: resolvedFormat, projectContext }, resolvedMode, personaSnapshot, resolvedLevel);
   callSignal.throwIfAborted();
   let output = '';
@@ -203,7 +247,7 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
     signal: callSignal,
   });
   for await (const chunk of stream) {
-    callSignal.throwIfAborted();
+    guard();
     if (chunk.type === 'text-delta') {
       output += chunk.text;
     } else if (chunk.type === 'block-end' && chunk.block?.type === 'text') {
@@ -214,7 +258,7 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
       finish = chunk.reason;
     }
   }
-  callSignal.throwIfAborted();
+  guard();
   if (finish?.kind === 'max-tokens') throw codedError('output-truncated', 'The result reached the output token limit. Increase the limit or shorten the request.');
   if (finish?.kind === 'tool-calls') throw codedError('invalid-output', 'A rewritten prompt must contain text only.');
   if (finish === undefined) throw codedError('incomplete-output', 'The model stream ended without a completion status.');
@@ -284,7 +328,7 @@ async function handleEnhance(service, request) {
   } catch (error) {
     return jsonResponse(502, {
       error: {
-        code: error?.name === 'TimeoutError' ? 'TimeoutError' : typeof error?.code === 'string' ? error.code : 'model-failed',
+        code: typeof error?.code === 'string' ? error.code : error?.name === 'TimeoutError' ? 'timeout' : 'model-failed',
         message: errorMessage(error),
       },
     });
@@ -311,7 +355,11 @@ export class PromptEnhancerService {
       throw codedError('invalid-persona', 'Choose a persona id.');
     }
     const persona = this.library.resolve(request.personaId);
-    const options = request.useProject === undefined ? this.options : { ...this.options, useProject: request.useProject };
+    const options = { ...this.options };
+    if (request.useProject === true || request.useProject === false) options.useProject = request.useProject;
+    if (typeof request.provider === 'string' && request.provider.trim()) options.provider = request.provider.trim();
+    if (typeof request.model === 'string' && request.model.trim()) options.model = request.model.trim();
+    if (typeof request.reasoningEffort === 'string' && request.reasoningEffort.trim()) options.reasoningEffort = request.reasoningEffort.trim();
     return enhancePromptDetailed(this.ctx, text, request.sessionId, signal, options, request.mode, persona, request.format, request.level);
   }
 

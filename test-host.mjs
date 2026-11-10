@@ -533,7 +533,7 @@ await test('the four legacy modes, mode fallback and custom-system string helper
   assert.equal((await enhancePromptDetailed(fallback.ctx, 'Draft', undefined, undefined, undefined, 'unknown-mode')).mode, 'general');
   const legacy = makeCtx();
   const result = await enhancePrompt(legacy.ctx, 'Legacy string draft', undefined, undefined, {
-    maxOutputTokens: 222, timeoutMs: 5000, systemPrompt: 'CUSTOM_LEGACY_SYSTEM',
+    maxOutputTokens: 222, timeoutMs: 5000, systemPrompt: 'CUSTOM_LEGACY_SYSTEM', provider: 'legacy-provider', model: 'legacy-model',
   }, 'task');
   assert.equal(typeof result, 'string');
   assert.ok(result.length > 0);
@@ -657,7 +657,7 @@ await test('the legacy helper strips wrapping and supports block text without du
   assert.equal(typeof detailed.elapsedMs, 'number');
 });
 
-await test('model routing preserves current, recorded, option and default fallback order', async () => {
+await test('model routing preserves session overrides while allowing explicit fast-route settings', async () => {
   const current = { provider: 'current-provider', model: 'current-model' };
   const recorded = { provider: 'recorded-provider', model: 'recorded-model' };
   const option = { provider: 'option-provider', model: 'option-model' };
@@ -668,15 +668,33 @@ await test('model routing preserves current, recorded, option and default fallba
     [undefined, { provider: 'test-provider', model: 'test-model' }],
   ];
   for (const [agent, expected] of cases) {
-    const fixture = makeCtx({ agent, modelInfo: { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } } });
+    const fixture = makeCtx({ agent, modelInfo: { reasoning: { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] } } });
     const result = await enhancePromptDetailed(fixture.ctx, 'Use this session route', 'session-route', undefined);
     assert.deepEqual(result.model, expected);
     assert.deepEqual(fixture.agentLookups, ['session-route']);
     assert.equal(fixture.prepareCalls[0].config.provider, expected.provider);
     assert.equal(fixture.prepareCalls[0].config.model, expected.model);
-    assert.equal(fixture.streamCalls[0].reasoningEffort, 'low');
+    assert.equal(fixture.streamCalls[0].reasoningEffort, 'off');
     assert.equal(fixture.streamCalls[0].sessionId, 'session-route');
   }
+  const explicit = makeCtx({ agent: { model: { current: () => current } } });
+  const pinned = await enhancePromptDetailed(explicit.ctx, 'Quick rewrite', 'session-pinned', undefined, {
+    provider: 'fast-provider', model: 'fast-model', timeoutMs: 5000,
+  });
+  assert.deepEqual(pinned.model, { provider: 'fast-provider', model: 'fast-model' });
+  assert.equal(explicit.prepareCalls[0].config.provider, 'fast-provider');
+  assert.equal(explicit.prepareCalls[0].config.model, 'fast-model');
+  assert.equal(explicit.agentLookups.length, 0);
+  const explicitEffort = makeCtx({ modelInfo: { reasoning: { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] } } });
+  await enhancePromptDetailed(explicitEffort.ctx, 'Quick rewrite', undefined, undefined, {
+    reasoningEffort: 'off',
+  });
+  assert.equal(explicitEffort.streamCalls[0].reasoningEffort, 'off');
+  const unsupportedEffort = makeCtx({ modelInfo: { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } } });
+  await enhancePromptDetailed(unsupportedEffort.ctx, 'Quick rewrite', undefined, undefined, {
+    reasoningEffort: 'off',
+  });
+  assert.equal(unsupportedEffort.streamCalls[0].reasoningEffort, undefined);
   const missing = makeCtx({ route: {} });
   await assert.rejects(enhancePrompt(missing.ctx, 'hello', undefined, undefined), { code: 'no-route' });
   await apply(missing.ctx);
@@ -751,6 +769,50 @@ await test('caller cancellation and plugin disposal prevent prepared requests fr
   assert.equal(fixture.streamCalls.length, 0);
   assert.equal(fixture.closed, 1);
   assert.equal(fixture.writes.length, 0);
+});
+
+await test('an already-aborted caller is rejected before the model route is prepared', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const fixture = makeCtx();
+  await assert.rejects(
+    enhancePromptDetailed(fixture.ctx, 'Draft', undefined, controller.signal),
+    { name: 'AbortError' },
+  );
+  assert.equal(fixture.prepareCalls.length, 0);
+});
+
+await test('timeout during model preparation reports the plugin timeout without starting a stream', async () => {
+  const entered = deferred();
+  const fixture = makeCtx({
+    beforePrepare: async (_config, signal) => {
+      entered.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      if (signal.aborted) {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        throw error;
+      }
+    },
+  });
+  const pending = enhancePromptDetailed(fixture.ctx, 'Draft', undefined, undefined, {
+    timeoutMs: 10, provider: 'fast-provider', model: 'fast-model',
+  });
+  await entered.promise;
+  await assert.rejects(pending, (error) => error.code === 'timeout' && /fast-provider\/fast-model/u.test(error.message));
+  assert.equal(fixture.streamCalls.length, 0);
+});
+
+await test('timeout while awaiting model output reports actionable model guidance', async () => {
+  const fixture = makeCtx({ chunks: async function* (_parameters) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    yield { type: 'text-delta', text: 'late' };
+    yield { type: 'finish', reason: { kind: 'stop' } };
+  } });
+  await assert.rejects(
+    enhancePromptDetailed(fixture.ctx, 'Draft', undefined, undefined, { timeoutMs: 5 }, 'task'),
+    (error) => error.code === 'timeout' && /faster model|reasoning effort/u.test(error.message),
+  );
 });
 
 console.log(`host tests passed (${passed} cases)`);

@@ -67,7 +67,8 @@
   config:
     maxInputChars: 12000
     maxOutputTokens: 3000
-    timeoutMs: 90000
+    timeoutMs: 30000
+    reasoningEffort: off
 ```
 
 ### 桌面伴侣 · Desktop companion
@@ -200,11 +201,19 @@ POST /api/health    → { ok: true, value: { ready: true, version } }
 
 **English:** Every `/api/*` call requires `Authorization: Bearer <token>` from `session.json`, an `Origin` header equal to the session origin, and `Host: 127.0.0.1:<port>`. No CORS, no LAN binding; `context` is capped at 8000 characters and unknown `level` falls back to `standard`.
 
+**中文：** DSH 提示词强化会调用当前会话模型的 `/api/*` route。当前 gateway 返回 Credits exhausted (429) 时，换用其他支持的同一 gateway model；route 恢复前强化会失败，不会自动切换 provider。
+
+**English:** DSH prompt enhancement calls the current session model route. If the gateway returns Credits exhausted (429), select another available model on that same gateway; enhancement can fail until the route recovers, and it will not silently switch providers.
+
 ## 项目感知 · Project-aware (dsh)
 
 **中文：** DSH Host 按顺序读取 `AGENTS.md` → `CLAUDE.md` → `README.md` → `README.zh.md` → `package.json`，注入 system 提示词并标记为**仅参考数据**；任务消息永远不会包含项目上下文。
 
 **English:** The DSH host reads `AGENTS.md` → `CLAUDE.md` → `README.md` → `README.zh.md` → `package.json` in order, injects them into the system prompt labelled **reference data only**; the task message never receives project context.
+
+**中文：** 提示词强化使用当前 DSH 会话所选 provider/model；模型支持时，辅助调用默认选最低推理档（优先 `off`）；默认 30 秒超时。不会切换供应商。若超时，请检查当前路由是否有可用额度、模型是否在生成正文，以及是否过度使用推理。
+
+**English:** Prompt enhancement uses the provider/model selected for the current DSH session. When supported, it requests the lowest reasoning effort (preferring `off`) for the auxiliary rewrite and times out after 30 seconds by default. It never switches providers. On timeout, check route credits, whether the model is producing text rather than reasoning only, and whether reasoning effort is unnecessarily high.
 
 | 规则 Rule | 取值 Value |
 | --- | --- |
@@ -249,6 +258,7 @@ npm pack --dry-run
 
 - 只有 dsh 能把按钮放进原生输入框；其他集成都属于面板/命令/热键的等价方案。<br>*Only dsh can put a button inside its native composer; the other integrations are panel/command/hotkey equivalents.*
 - VS Code 扩展以本地构建的 VSIX 分发，未发布到 Marketplace。<br>*The VS Code extension is built locally as a VSIX; it is not published to the Marketplace.*
+- DSH 的提示词强化复用当前会话模型，默认将辅助改写的推理强度设为 `off`（模型支持时），默认超时 30 秒。若当前路由额度不足、响应慢或不返回正文，会明确提示模型路由和超时，不会偷偷切换供应商。<br>*DSH prompt enhancement uses the current session model, defaults auxiliary reasoning to `off` when supported, and times out after 30 seconds. If the route is out of credits, slow, or returns no text, it reports the route and timeout clearly; it never silently switches providers.*
 - Windows 热键工具需要 PowerShell 7，且把选区作为命令行参数传递，极长选文可能触及 Windows 参数长度限制；超长草稿请用 CLI 走 stdin。<br>*The Windows hotkey tool requires PowerShell 7 and passes the selection as a command-line argument, so extremely long selections can hit the Windows argument limit — use the CLI with stdin for very long drafts.*
 - Claude Code 的 hook 只能附加上下文，不能替换提交的原文。<br>*The Claude Code hook can add context but cannot replace the submitted prompt.*
 - 结构化输出由生成指令约束，不是确定性解析器；模型仍可能偶尔偏离。<br>*Structured output is enforced by generation instructions, not a deterministic parser; a model may occasionally deviate.*
