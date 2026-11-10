@@ -2,13 +2,30 @@
 
 English · [中文](README.zh.md)
 
-**Version 1.4.0 source.** GitHub Releases and npm are published separately; the source version alone does not imply a new packaged release.
+**Version 1.6.0 source.** GitHub Releases and npm are published separately; the source version alone does not imply a new packaged release.
 
 The project is now named **Prompt Spark**. Its DSH/npm package identifier remains `dsh-prompt-enhancer-plus` for compatibility with existing installations.
 
-One enhancement core, two entry points: improve drafts inside DeepSeek Harness, or use a standalone desktop window and paste its results into Claude, Codex, or another AI application. Nothing sends a chat message automatically.
+One enhancement core, many entry points: a native composer button inside DeepSeek Harness, a bottom-panel button in VS Code and Cursor, a `/enhance` command in Claude Code, and a global hotkey for any other application (ChatGPT Desktop, Claude Desktop, …). Every entry point shares the same rules and, outside DSH, the same local companion service. Nothing sends a chat message automatically.
 
 ## What's new
+
+### 1.6.0 — cross-harness, one local service
+
+- **One local enhancement service.** `npm run desktop` now also exposes a stable `POST /api/enhance` endpoint (plus `POST /api/health`) on a random loopback port, and writes a discovery file at `%APPDATA%/prompt-enhancer-plus-local/session.json` (`{ origin, token, pid, version, startedAt }`). Every adapter below reuses this one service and the single `prompt-core.js` rules.
+- **VS Code / Cursor extension.** A bottom-panel input box with a ✨ button, a selection-replacement command, and a `Ctrl+Alt+E` shortcut. The same VSIX installs in both editors.
+- **Any-app global hotkey (Windows).** `hotkey-tool/` registers `Ctrl+Alt+E`: select text in ChatGPT Desktop, Claude Desktop, or any app, press the hotkey, and the enhanced prompt is written back to the clipboard (never auto-pasted).
+- **Generic CLI.** `cli/enhance.mjs` works from a terminal or a pipeline: `echo "..." | node cli/enhance.mjs --level detailed`.
+- **Claude Code integration.** A `/enhance` slash command plus an optional `UserPromptSubmit` hook that appends the structured version as additional context (Claude Code cannot replace prompt text from a hook).
+- **AI-facing structured output.** All three levels now emit a light semantic skeleton — `Task:`, `Requirements:`, `Acceptance criteria:`, `Constraints:`, and, at `detailed`, `Context:` and `Failure cases:` — instead of loose prose. The skeleton is plain text (not Markdown/JSON), sections without content are omitted, and the wording stays natural so humans can still read it.
+
+### 1.5.0
+
+- **Project-aware enhancement.** In DSH, enhancement can read the current session workspace's `AGENTS.md`, `CLAUDE.md`, `README.md`, `README.zh.md`, and `package.json` and inject them into the rewrite as labelled reference data (never as instructions, and never into the task message). It degrades silently to no project context when the workspace or files are unavailable. A per-request `useProject` toggle (default on) controls it.
+- **Three expansion levels.** `concise`, `standard`, and `detailed` control how much the rewrite expands: concise only polishes, standard adds proportional detail, detailed expands background, boundaries, and acceptance criteria. Default is `standard`. Available as a selector in the preview panel, the agent tool (`level`), and the HTTP API.
+- **"Enhance once" bug fixed.** After a result existed, the composer toolbar button only reopened the old preview and permanently read "Enhanced". It now re-runs enhancement on the current draft whenever the draft has changed since the last result, while unchanged drafts still open the preview. Panels, stale-revision protection, and replacement targeting are unchanged.
+
+### Earlier
 
 - **Full-text, editable previews:** a spacious DSH review window with an expanded view instead of a six-row text box. Long results use one document scroll area; arbitrarily long text cannot all fit on one screen.
 - **Natural plain text by default:** proportional paragraphs rather than decorative headings, bold markers, or mandatory role/goal/constraints templates. Markdown remains an explicit output option.
@@ -48,10 +65,22 @@ npm run desktop
 On Windows, `启动通用窗口.cmd` launches the default local companion directly. No Electron download or additional browser is required. It listens on a random loopback-only `127.0.0.1` port and opens your default browser; if opening fails, use the local URL printed in the terminal.
 
 1. Open **Settings** and enter an API base URL, model ID, and your own API key.
-2. Enter or paste your draft, select a mode and direction, and generate.
+2. Enter or paste your draft, select a mode, a detail level and a direction, and generate.
 3. Read or edit the result, copy the complete text, and paste it manually into the target application.
 4. Use `Ctrl/Cmd+Enter` to generate. Browser mode does not provide a native global shortcut or always-on-top control and does not read other applications' composers.
 5. Keep the terminal running. Closing the browser tab does not stop the server; choose **Quit** in the interface or press `Ctrl+C` in the terminal. Task text and in-memory keys do not survive server exit.
+
+### Local API for adapters
+
+When `npm run desktop` is running, the companion also serves a stable local API used by the VS Code/Cursor extension, the CLI, the hotkey tool, and the Claude Code hook:
+
+```text
+POST /api/enhance   { text, mode?, level?, format?, personaId?, direction?, context? }
+                    → { ok: true, value: { enhanced, mode, level, format, model, usage, elapsedMs } }
+POST /api/health    → { ok: true, value: { ready: true, version } }
+```
+
+Every `/api/*` request must carry the bearer token from `%APPDATA%/prompt-enhancer-plus-local/session.json` **and** an `Origin` header equal to that file's `origin`. There is no CORS access and no remote binding. `context` is limited to 8000 characters; `level` falls back to `standard` when unknown.
 
 The optional Electron development entry point retains native pin/global-shortcut features, but native startup crashes on the current machine and is not the default:
 
@@ -90,7 +119,74 @@ The target client and the enhancement model are independent. For example, enhanc
 
 ### Compatibility boundary
 
-This iteration provides a local browser-backed window and DSH-native entry point, not a native Claude/Codex composer extension, MCP server, MCP App, or automatic current-draft read/write. Those adapters can be built around the same core but require per-host verification. The local source targets desktop browsers on Windows/macOS/Linux; no claim of completed visual validation on all operating systems is made. No signed standalone installer is included.
+The desktop window remains a browser-backed local companion, not a native Claude/Codex composer extension, MCP server, or MCP App. It does not read or write another application's composer, and it never auto-pastes or auto-sends. The adapters described in the next section are thin clients of the same local service; each one is subject to the host's own extension capabilities.
+
+## Cross-harness integrations
+
+All adapters call the same local service and therefore the same `prompt-core.js` rules. Start the service first:
+
+```sh
+npm run desktop
+```
+
+Keep that terminal running. It writes `%APPDATA%/prompt-enhancer-plus-local/session.json` with the loopback origin and bearer token; every adapter reads that file. Stop it with **Quit** in the window or `Ctrl+C`.
+
+### VS Code and Cursor
+
+The extension lives in `vscode-extension/` and uses only standard VS Code APIs, so one package works in both editors.
+
+```sh
+cd vscode-extension
+npx @vscode/vsce package --allow-missing-repository
+code --install-extension prompt-spark-vscode-1.0.0.vsix
+# Cursor:
+cursor --install-extension prompt-spark-vscode-1.0.0.vsix
+```
+
+- **Bottom panel**: open the **提示词强化** panel in the Panel area, type a draft, choose 详细度, click **✨ 强化**, then copy or insert.
+- **Selection**: select text in the editor and run `Prompt Spark: 强化选中文本` (`Ctrl+Alt+E` / `Cmd+Alt+E`).
+- **Input box**: `Prompt Spark: 输入草稿并强化` inserts the result at the cursor.
+- **Limitation**: the Cursor AI Chat panel is private; the extension cannot inject a button into it. Use the bottom panel or the shortcut, then paste.
+
+### Claude Code (desktop and CLI)
+
+Claude Code exposes custom slash commands, not UI buttons.
+
+- Copy `.claude/commands/enhance.md` to `<project>/.claude/commands/enhance.md` or `~/.claude/commands/enhance.md`.
+- Run `/enhance 帮我做一个导出 CSV 的功能`.
+- Set `PROMPT_SPARK_CLI` if the repository is not at the default path.
+- Optional: `claude-code/hooks/user-prompt-submit.mjs` appends the structured version as additional context on `UserPromptSubmit`. Hooks cannot replace prompt text, and the hook is inert unless `PROMPT_SPARK_HOOK=1`.
+
+See [`claude-code/README.md`](claude-code/README.md).
+
+### Any app: Windows global hotkey
+
+For ChatGPT Desktop, Claude Desktop, or any application without an extension API, use `hotkey-tool/`:
+
+```powershell
+hotkey-tool\start-hotkey.cmd
+```
+
+Select text anywhere and press `Ctrl+Alt+E`. The tool copies the selection, enhances it, and writes the result back to the clipboard with a tray notice. It never auto-pastes. Requires PowerShell 7 and Windows. See [`hotkey-tool/README.md`](hotkey-tool/README.md).
+
+### Terminal and pipelines
+
+```sh
+echo "帮我做一个导出 CSV 的功能" | node cli/enhance.mjs --level detailed
+node cli/enhance.mjs --text "..." --context-file AGENTS.md --copy
+```
+
+`cli/enhance.mjs` prints only the enhanced text to stdout, so it composes with other tools. `--json` returns the full result object.
+
+### Which harness can show a button inside its own composer?
+
+| Harness | Native composer button | Practical route |
+| --- | --- | --- |
+| dsh | Yes | Built-in composer toolbar (this plugin) |
+| VS Code | No | Bottom-panel webview + command + shortcut |
+| Cursor | No | Same VSIX as VS Code |
+| Claude Code | No | `/enhance` slash command, optional hook, or global hotkey |
+| ChatGPT Desktop | No | Global hotkey + clipboard |
 
 ## Plain text and literal symbols
 
@@ -115,19 +211,19 @@ Existing configuration remains supported:
       Rewrite the request as a concise task brief.
 ```
 
-Requires DSH 0.2.2-rc.1 or a compatible newer release with `connection`, `llm`, `agents`, `agentDefaultModel`, and `storageDomain`. The existing original sparkle icon is retained; no third-party brand artwork is introduced.
+Requires DSH 0.2.2-rc.1 or a compatible newer release with `connection`, `llm`, `agents`, `agentDefaultModel`, `storageDomain`, `fs`, and `workingDirectory`. The last two are used for project-aware context and degrade silently to no context when unavailable. The existing original sparkle icon is retained; no third-party brand artwork is introduced.
 
 `systemPrompt` replaces the built-in mode instruction, followed by persona directions and mandatory output-format/language/facts/scope/rewrite-only guards. These final guards override conflicting custom directions. The default enhancement still makes one auxiliary model call.
 
 ### API and core
 
-`POST /api/prompt-enhancer-plus/enhance` retains `text`, `sessionId`, `mode`, and `personaId`. Optional `format` is `plain` (default) or `markdown`; the response adds `format` while retaining text, usage, elapsed time, model, and captured persona fields.
+`POST /api/prompt-enhancer-plus/enhance` retains `text`, `sessionId`, `mode`, and `personaId`. Optional `format` is `plain` (default) or `markdown`; optional `level` is `concise`, `standard` (default) or `detailed`; the response adds `format` while retaining text, usage, elapsed time, model, and captured persona fields.
 
 Authenticated persona HTTP actions remain `GET /api/prompt-enhancer-plus/personas` and `POST` actions `list`, `save`, `select`, `delete`. Mutations require the latest `expectedRevision`.
 
-The `prompt_enhancer` agent tool uses the same application operations, with optional `format` on `enhance`. List before mutating personas. It does not send messages, replace composer text, or change permissions.
+The `prompt_enhancer` agent tool uses the same application operations, with optional `format`, `level` and `useProject` on `enhance`. List before mutating personas. It does not send messages, replace composer text, or change permissions.
 
-`prompt-core.js`, also exported as `dsh-prompt-enhancer-plus/core`, has five named exports: `resolveMode`, `resolveFormat`, `enhancementSystem`, `inputFor`, and `normalizeEnhancedText`. It has no DSH, Node, or model-SDK dependency.
+`prompt-core.js`, also exported as `dsh-prompt-enhancer-plus/core`, has six named exports: `resolveMode`, `resolveFormat`, `resolveLevel`, `enhancementSystem`, `inputFor`, and `normalizeEnhancedText`. It has no DSH, Node, or model-SDK dependency. `enhancementSystem(options, mode, persona, level)` accepts `options.projectContext` and emits the semantic skeleton for the chosen level.
 
 ## Development and validation
 
@@ -140,9 +236,18 @@ npm pack --dry-run
 npm run desktop:smoke
 ```
 
-Unit tests require no Electron and call no real model. They cover core rules and symbol preservation, Host/tool compatibility, persona persistence/conflicts, pure Client state, API adapters, secret storage, and loopback HTTP security. The default desktop smoke command starts the real Node service and verifies page serving/authenticated initialization with isolated temporary configuration, without opening a browser, taking screenshots, or calling a model, then cleans up. Optional native startup is tested separately with `npm run desktop:electron:smoke`, which has not passed on the current machine.
+Run a single adapter suite when you only touched one area:
 
-Automated checks do not establish visual quality. Manually check light/dark themes, narrow windows, long editable results, focus/Escape behavior, and the intended provider API. Slot registration and installation alone are not visual verification.
+```sh
+node desktop/test-server.mjs
+node vscode-extension/test-client.mjs
+node hotkey-tool/test-cli.mjs
+node cli/enhance.mjs --help
+```
+
+Unit tests require no Electron and call no real model. They cover core rules and symbol preservation, Host/tool compatibility, persona persistence/conflicts, pure Client state, API adapters, secret storage, loopback HTTP security, the `/api/enhance` contract (including discovery-file lifecycle and level fallback), the VS Code client, and the CLI. The default desktop smoke command starts the real Node service and verifies page serving, authenticated initialization and the session discovery file with isolated temporary configuration, without opening a browser, taking screenshots, or calling a model, then cleans up. Optional native startup is tested separately with `npm run desktop:electron:smoke`, which has not passed on the current machine.
+
+Automated checks do not establish visual quality. Manually check light/dark themes, narrow windows, long editable results, focus/Escape behavior, and the intended provider API. Slot registration and installation alone are not visual verification. The VS Code extension's webview and the Windows hotkey script are syntax- and contract-checked only; they have not been exercised inside a running VS Code/Cursor window or against a real pressed hotkey in this working copy.
 
 ## Known limitations
 
@@ -150,15 +255,20 @@ Automated checks do not establish visual quality. Manually check light/dark them
 - DSH's five-entry recent task history remains in per-session browser localStorage and can include inputs/results. It is not migrated, uploaded, or cleared; a Web port change can make previous browser history unavailable.
 - Older history without `format` remains readable without regenerating or silently rewriting its text.
 - Custom personas and the default selection persist on the DSH Host; companion configuration is independent.
+- **No harness except dsh can put a button inside its native composer.** VS Code/Cursor use a bottom-panel webview and commands; Claude Code uses slash commands; ChatGPT Desktop has no extension API and relies on the global hotkey. These are platform limits, not missing implementation.
+- The VS Code extension is distributed as source and a locally built VSIX; it is not published to the VS Code Marketplace. Cursor installs the same VSIX.
+- The Windows hotkey tool requires PowerShell 7, does not auto-paste, and may conflict with an existing `Ctrl+Alt+E` binding (pass `-Hotkey` to change it). It passes selected text as a command-line argument, so extremely long selections can hit the Windows command-line length limit; use the CLI with stdin for very long drafts.
+- The Claude Code hook can only add context, not replace the submitted prompt; the slash command is the authoritative path.
+- Project-aware enhancement reads `AGENTS.md`, `CLAUDE.md`, `README.md`, `README.zh.md`, and `package.json` from the session workspace, capped at 6000 characters per file and 8000 in total; larger or missing files are skipped silently.
 
 ## Working-copy validation record
 
-- The complete `npm test` passes: 14 core groups, 21 Host groups, 13 persona groups, 13 real loopback HTTP security/lifecycle groups, Client state checks, and API adapter/storage checks.
-- The current DSH profile is re-linked to this source directory through the plugin manager, with `application: applied`, version 1.4.0. The broken old-directory link is replaced; persona storage is not cleared.
-- The existing GUI reports the new `shell.overlay` workspace and session bridge registrations. One real enhancement tool call returns `format: plain`, preserves `C#` and `*.ts`, and does not submit or replace a chat draft.
-- Browser control is unavailable, so final visual appearance, focus, clipboard behavior, and long-text scrolling remain unverified.
-- **The default companion now runs on Node and the existing browser, without Electron.** `npm run desktop:smoke` passes a real local-server startup, page serving, authenticated initialization, five personas, and disabled key persistence, without opening a browser or calling a model.
-- The optional Electron entry still fails native validation: both tool execution and direct user launch exit with `0x80000003`; an isolated diagnostic also encounters temporary-directory `mkdtemp EPERM`, without establishing its exact permission cause. Windows permissions/security settings and the production sandbox policy are unchanged. The default entry avoids that runtime; no native Claude/Codex composer integration is claimed.
+- `npm test` passes: 15 core groups, 21 Host groups, 13 persona groups, Client state checks, feature integration checks, 15 real loopback HTTP security/contract groups, the VS Code client suite (14 checks) and the CLI suite (23 checks).
+- `npm run desktop:smoke` passes a real local-server startup, page serving, authenticated initialization, five personas, the session discovery file (written then removed on close), and no model call.
+- `node desktop/local.mjs --smoke-test` was run again after the `/api/enhance` change with the same result.
+- A manual end-to-end run used `createCompanionServer` with a fake provider: the discovery file produced a working origin/token, `/api/health` returned `{ready:true,version:'1.6.0'}`, `/api/enhance` returned `level: detailed`, the project context reached the upstream system prompt, the detailed skeleton contained `Failure cases`, and a request without an `Origin` header was rejected with 403. The same server was driven through `cli/enhance.mjs` (context and detailed level confirmed) and through the VS Code `lib/client.js` (`ping` and `enhance` confirmed).
+- The DSH profile is re-linked to this source directory through the plugin manager at version 1.6.0.
+- Not verified in this working copy: real VS Code/Cursor UI, a real pressed global hotkey, Claude Code slash-command execution, and the Electron entry (still fails natively with `0x80000003`).
 
 ## License
 

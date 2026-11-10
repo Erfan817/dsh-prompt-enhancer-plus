@@ -1,0 +1,15 @@
+{
+  "_comment": "把本片段合并进项目的 .claude/settings.json。只有设置 PROMPT_SPARK_HOOK=1 时 hook 才会真正调用模型。",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"D:/插件/dsh-prompt-enhancer-plus/claude-code/hooks/user-prompt-submit.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}

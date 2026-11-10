@@ -13,7 +13,7 @@ await test('the core loads as standalone ESM without DSH, Node or relative modul
   const source = await readFile(new URL('./prompt-core.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /^\s*(?:import\s|export\s.+\sfrom\s)|\brequire\s*\(|\bprocess\.|\bBuffer\b|node:/mu);
   const portable = await import(`data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`);
-  assert.deepEqual(Object.keys(portable).sort(), ['enhancementSystem', 'inputFor', 'normalizeEnhancedText', 'resolveFormat', 'resolveMode']);
+  assert.deepEqual(Object.keys(portable).sort(), ['enhancementSystem', 'inputFor', 'normalizeEnhancedText', 'resolveFormat', 'resolveLevel', 'resolveMode']);
   assert.equal(portable.enhancementSystem(), enhancementSystem());
   assert.equal(portable.normalizeEnhancedText('  A natural prompt.  '), 'A natural prompt.');
 });
@@ -29,7 +29,7 @@ await test('mode and format resolution have safe, explicit defaults', () => {
   }
 });
 
-await test('all modes are domain-neutral, proportional and naturally structured by default', () => {
+await test('all modes are domain-neutral, proportional and structurally anchored by default', () => {
   const expectations = {
     general: /complete, high-quality prompt/u,
     system: /precise, self-contained system prompt/u,
@@ -49,6 +49,49 @@ await test('all modes are domain-neutral, proportional and naturally structured 
   assert.equal(enhancementSystem({}, 'unknown'), enhancementSystem());
   assert.equal(enhancementSystem(null), enhancementSystem());
   assert.equal(enhancementSystem({ systemPrompt: '   ' }), enhancementSystem());
+});
+
+await test('every level uses a machine-parseable semantic skeleton with tier-specific sections', () => {
+  const guardFor = (level) => {
+    const system = enhancementSystem({}, 'task', undefined, level);
+    return system.slice(system.lastIndexOf('Non-negotiable rewrite rules:'));
+  };
+  const levelGuidanceFor = (level) => {
+    const system = enhancementSystem({}, 'task', undefined, level);
+    return system.slice(system.indexOf('Length/expansion level:'), system.lastIndexOf('Non-negotiable rewrite rules:'));
+  };
+  for (const level of ['concise', 'standard', 'detailed']) {
+    const guards = guardFor(level);
+    for (const label of ['Task:', 'Requirements:', 'Acceptance criteria:', 'Constraints:', 'Context:', 'Failure cases:']) {
+      assert.ok(guards.includes(label), `${level} guards must mention ${label}`);
+    }
+    assert.match(guards, /plain-text anchors, not Markdown headings, JSON, YAML, or XML/u);
+    assert.match(guards, /omit any section that has no real content/u);
+    assert.match(guards, /Do not output JSON, YAML, or XML unless the user's draft explicitly requests a machine-readable format/u);
+    assert.match(guards, /preamble, explanation, or enclosing code fence/u);
+    assert.match(guards, /proportional to the source/u);
+    assert.match(guards, /Do not add Markdown headings, emphasis, decorative bullets, tables, blockquotes, inline-code wrappers, or code fences/u);
+  }
+  const concise = levelGuidanceFor('concise');
+  const standard = levelGuidanceFor('standard');
+  const detailed = levelGuidanceFor('detailed');
+  for (const section of ['Task:', 'Requirements:']) {
+    assert.ok(concise.includes(section), `concise must include ${section}`);
+    assert.ok(standard.includes(section), `standard must include ${section}`);
+    assert.ok(detailed.includes(section), `detailed must include ${section}`);
+  }
+  for (const section of ['Acceptance criteria:', 'Constraints:']) {
+    assert.ok(!concise.includes(section), `concise must not mention ${section}`);
+    assert.ok(standard.includes(section), `standard must include ${section}`);
+    assert.ok(detailed.includes(section), `detailed must include ${section}`);
+  }
+  for (const section of ['Context:', 'Failure cases:']) {
+    assert.ok(!concise.includes(section), `concise must not mention ${section}`);
+    assert.ok(!standard.includes(section), `standard must not mention ${section}`);
+    assert.ok(detailed.includes(section), `detailed must include ${section}`);
+  }
+  assert.match(concise, /number them when there is more than one/u);
+  assert.match(detailed, /Never invent facts, requirements, or capabilities/u);
 });
 
 await test('mandatory language, facts, scope and format guards follow custom prompts and all persona fields', () => {

@@ -7,6 +7,7 @@ window.__ModuleLoader__.load({
     const NS = 'promptEnhancerPlus';
     const MODES = ['general', 'system', 'task', 'concise'];
     const FORMATS = ['plain', 'markdown'];
+    const LEVELS = ['concise', 'standard', 'detailed'];
     const UNDO_MS = 10000;
     const HISTORY_LIMIT = 5;
     const HISTORY_PREFIX = 'dsh-prompt-enhancer-plus:history:';
@@ -38,6 +39,8 @@ window.__ModuleLoader__.load({
       modeSystem: 'System prompt',
       modeTask: 'Task brief',
       modeConcise: 'Concise',
+      levelLabel: 'Length', levelConcise: 'Concise', levelStandard: 'Standard', levelDetailed: 'Detailed',
+      projectLabel: 'Project-aware', projectHint: 'Read AGENTS.md/README/package.json from the workspace',
       usageUnknown: 'usage unavailable',
       personas: 'Personas', personaTitle: 'Enhancement personas', noPersona: 'No persona',
       personaHint: 'Save how prompts should be improved, not the task itself. Only enhancement calls use these directions.',
@@ -101,6 +104,8 @@ window.__ModuleLoader__.load({
       modeSystem: '系统提示词',
       modeTask: '任务描述',
       modeConcise: '简洁润色',
+      levelLabel: '长度档', levelConcise: '简洁', levelStandard: '标准', levelDetailed: '详细',
+      projectLabel: '项目感知', projectHint: '从工作区读取 AGENTS.md/README/package.json 作为背景',
       usageUnknown: '用量未知',
       personas: '强化人格', personaTitle: '我的强化人格', noPersona: '不使用人格',
       personaHint: '这里保存“怎么强化”的方法，不是具体任务。人格只影响强化提示词，不改变主助手。',
@@ -269,6 +274,10 @@ window.__ModuleLoader__.load({
       return format === 'markdown' ? 'markdown' : 'plain';
     }
 
+    function normalizeLevel(level) {
+      return LEVELS.includes(level) ? level : 'standard';
+    }
+
     function historyEntry(entry) {
       return {
         ...entry,
@@ -276,13 +285,14 @@ window.__ModuleLoader__.load({
         enhanced: typeof entry.enhanced === 'string' ? entry.enhanced : '',
         mode: normalizeMode(entry.mode),
         format: normalizeFormat(entry.format),
+        level: normalizeLevel(entry.level),
       };
     }
 
     function createStore(sessionId) {
       const historyKey = HISTORY_PREFIX + sessionId;
       let state = {
-        status: 'idle', mode: 'general', format: 'plain', persona: null,
+        status: 'idle', mode: 'general', format: 'plain', level: 'standard', useProject: true, persona: null,
         editorSeed: undefined, panelView: 'preview', fullscreen: false,
         targetDraft: '', insertion: null, targetInvalidated: false, requestId: 0,
         originalDraft: '', enhanced: '', generated: '', error: '',
@@ -328,9 +338,11 @@ window.__ModuleLoader__.load({
       } = options;
       const mode = normalizeMode(options.mode);
       const format = normalizeFormat(options.format);
+      const level = normalizeLevel(options.level);
+      const useProject = options.useProject !== false;
       const requestId = store.get().requestId + 1;
       store.update({
-        status: 'busy', panelView: 'preview', mode, format, error: '', undo: null, requestId,
+        status: 'busy', panelView: 'preview', mode, format, level, useProject, error: '', undo: null, requestId,
         originalDraft, targetDraft, insertion, targetInvalidated: false, enhanced: '', generated: '',
       });
       const startedAt = Date.now();
@@ -338,7 +350,7 @@ window.__ModuleLoader__.load({
         const response = await fetch('/api/prompt-enhancer-plus/enhance', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ text, sessionId, mode, personaId, format }),
+          body: JSON.stringify({ text, sessionId, mode, personaId, format, level, useProject }),
           signal,
         });
         const payload = await response.json().catch(() => null);
@@ -355,6 +367,8 @@ window.__ModuleLoader__.load({
           enhanced: enhanced.trim(), generated: enhanced.trim(),
           mode: normalizeMode(payload?.mode ?? mode),
           format: normalizeFormat(payload?.format ?? format),
+          level: normalizeLevel(payload?.level ?? level),
+          useProject,
           usage: payload?.usage ?? null,
           elapsedMs: Number.isFinite(payload?.elapsedMs) ? payload.elapsedMs : Date.now() - startedAt,
           model: payload?.model ?? null,
@@ -363,6 +377,7 @@ window.__ModuleLoader__.load({
         store.update(result);
         store.pushHistory({
           original: originalDraft, enhanced: result.enhanced, mode: result.mode, format: result.format,
+          level: result.level,
           persona: result.persona, usage: result.usage, elapsedMs: result.elapsedMs, model: result.model,
           at: Date.now(),
         });
@@ -440,10 +455,15 @@ window.__ModuleLoader__.load({
           && typeof input.inputActions?.insertText === 'function';
         const targetCurrent = editable && hasActions && !state.targetInvalidated
           && input.draft === state.targetDraft && state.insertion !== null;
+        const draftMatchesTarget = input.phase === 'plain' && input.draft === state.targetDraft
+          && state.insertion !== null && !state.targetInvalidated;
         return {
           state, editable,
           canStart: editable && hasActions && input.draft.trim().length > 0
             && state.status !== 'busy' && library.get().ready,
+          canRestart: editable && hasActions && input.draft.trim().length > 0
+            && state.status !== 'busy' && library.get().ready,
+          draftMatchesTarget,
           canApply: targetCurrent && state.status !== 'busy' && state.enhanced.trim().length > 0,
           canRerun: targetCurrent && state.status === 'preview' && state.originalDraft.trim().length > 0 && library.get().ready,
           canUndo: editable && hasActions && state.undo !== null
@@ -492,7 +512,9 @@ window.__ModuleLoader__.load({
           return run({
             text: input.draft.trim(), originalDraft: input.draft, targetDraft: input.draft,
             insertion: input.inputActions.captureInsertion(),
-            mode: store.get().mode, format: store.get().format, personaId: library.get().selectedId,
+            mode: store.get().mode, format: store.get().format,
+            level: store.get().level, useProject: store.get().useProject,
+            personaId: library.get().selectedId,
           });
         },
         rerun(patch) {
@@ -501,6 +523,7 @@ window.__ModuleLoader__.load({
           return run({
             text: state.originalDraft.trim(), originalDraft: state.originalDraft, targetDraft: state.targetDraft,
             insertion: state.insertion, mode: patch.mode ?? state.mode, format: patch.format ?? state.format,
+            level: patch.level ?? state.level, useProject: patch.useProject ?? state.useProject,
             personaId: state.persona?.id ?? library.get().selectedId,
           });
         },
@@ -560,6 +583,7 @@ window.__ModuleLoader__.load({
         },
         preview() { if (!disposed) store.update({ panelView: 'preview', editorSeed: undefined }); },
         toggleFullscreen() { if (!disposed) store.update({ fullscreen: !store.get().fullscreen }); },
+        setUseProject(value) { if (!disposed) store.update({ useProject: value !== false }); },
         showError(error) { if (!disposed) store.update({ error }); },
       };
       connection = bridge.connect(sessionId, snapshot(), actions);
@@ -732,14 +756,19 @@ window.__ModuleLoader__.load({
       const state = snapshot?.state;
       const hasResult = state?.status === 'preview' && state.generated.length > 0;
       const busy = state?.status === 'busy';
+      const draftMatchesTarget = hasResult && snapshot?.draftMatchesTarget === true;
       return h('div', { className: 'pe-root' },
         h('button', {
           type: 'button', className: 'pe-button' + (hasResult ? ' pe-open' : ''),
           disabled: session === undefined || (!busy && !hasResult && !snapshot.canStart),
-          title: hasResult || busy ? t('openPreview') : t('hint'),
+          title: busy || draftMatchesTarget ? t('openPreview') : t('hint'),
           'aria-haspopup': 'dialog', 'aria-expanded': current.activeSessionId === String(sessionId),
-          onClick: () => { if (hasResult || busy) session.actions.open(); else void session.actions.start(); },
-        }, h('span', { className: 'pe-icon', 'aria-hidden': true }, h(SparkleIcon)), t(busy ? 'busy' : hasResult ? 'doneShort' : 'button')),
+          onClick: () => {
+            if (busy || draftMatchesTarget) { session.actions.open(); return; }
+            void session.actions.start();
+          },
+        }, h('span', { className: 'pe-icon', 'aria-hidden': true }, h(SparkleIcon)),
+        t(busy ? 'busy' : draftMatchesTarget ? 'doneShort' : 'button')),
         h('button', {
           type: 'button', className: 'pe-button pe-more', disabled: session === undefined,
           'aria-label': t('openPreview'), title: t('more'), 'aria-haspopup': 'dialog',
@@ -877,7 +906,9 @@ window.__ModuleLoader__.load({
           }, h('span', { className: 'pe-history-text' }, truncate(entry.enhanced)),
           h('span', { className: 'pe-history-meta' }, [
             t(`mode${entry.mode[0].toUpperCase()}${entry.mode.slice(1)}`),
-            t(entry.format === 'markdown' ? 'formatMarkdown' : 'formatPlain'), formatElapsed(entry.elapsedMs),
+            t(entry.format === 'markdown' ? 'formatMarkdown' : 'formatPlain'),
+            t(`level${normalizeLevel(entry.level)[0].toUpperCase()}${normalizeLevel(entry.level).slice(1)}`),
+            formatElapsed(entry.elapsedMs),
           ].filter(Boolean).join(' · ')))))),
         h('div', { className: 'pe-detail-section' }, h('button', {
           type: 'button', className: 'pe-action', disabled: !snapshot.canStart,
@@ -960,7 +991,15 @@ window.__ModuleLoader__.load({
                 h('label', null, t('formatLabel'), h('select', {
                   value: state.format, disabled: !snapshot.canRerun, title: t('rerunHint'),
                   onChange: (event) => { void actions.rerun({ format: event.target.value }); },
-                }, ...FORMATS.map((format) => h('option', { key: format, value: format }, t(format === 'markdown' ? 'formatMarkdown' : 'formatPlain')))))),
+                }, ...FORMATS.map((format) => h('option', { key: format, value: format }, t(format === 'markdown' ? 'formatMarkdown' : 'formatPlain'))))),
+                h('label', null, t('levelLabel'), h('select', {
+                  value: state.level, disabled: !snapshot.canRerun, title: t('rerunHint'),
+                  onChange: (event) => { void actions.rerun({ level: event.target.value }); },
+                }, ...LEVELS.map((level) => h('option', { key: level, value: level }, t(`level${level[0].toUpperCase()}${level.slice(1)}`))))),
+                h('label', { title: t('projectHint') }, h('input', {
+                  type: 'checkbox', checked: state.useProject !== false,
+                  onChange: (event) => { actions.setUseProject(event.target.checked); },
+                }), t('projectLabel'))),
               h('p', { className: 'pe-help' }, t('rerunHint')),
               h('p', { className: 'pe-help pe-editor-hint' }, t('editHint')),
               h(AutoGrowingTextarea, {

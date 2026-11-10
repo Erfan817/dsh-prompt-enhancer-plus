@@ -1,7 +1,8 @@
-import { enhancementSystem, inputFor, normalizeEnhancedText, resolveFormat, resolveMode } from '../prompt-core.js';
+import { enhancementSystem, inputFor, normalizeEnhancedText, resolveFormat, resolveLevel, resolveMode } from '../prompt-core.js';
 
 const MAX_RESPONSE_BYTES = 1_048_576;
 const MAX_INPUT_CHARS = 12000;
+const MAX_CONTEXT_CHARS = 8000;
 const MAX_KEY_CHARS = 8192;
 
 export function providerError(code, message) {
@@ -35,9 +36,15 @@ export function buildProviderCall(settings, request, apiKey = '') {
   const text = typeof request.text === 'string' ? request.text.trim() : '';
   if (!text) throw providerError('empty-input', '先写下需要强化的内容。');
   if (text.length > MAX_INPUT_CHARS) throw providerError('too-long', '输入最多支持 12000 个字符。');
+  if (request.context !== undefined && request.context !== null && typeof request.context !== 'string') {
+    throw providerError('invalid-request', '项目上下文必须是文本。');
+  }
+  const context = typeof request.context === 'string' ? request.context.trim() : '';
+  if (context.length > MAX_CONTEXT_CHARS) throw providerError('invalid-request', '项目上下文最多支持 8000 个字符。');
   const format = resolveFormat(request.format);
   const mode = resolveMode(request.mode);
-  const system = enhancementSystem({ format }, mode, request.persona);
+  const level = resolveLevel(request.level);
+  const system = enhancementSystem({ format, projectContext: context }, mode, request.persona, level);
   const headers = { 'content-type': 'application/json' };
   let body;
   if (provider === 'anthropic') {
@@ -49,7 +56,7 @@ export function buildProviderCall(settings, request, apiKey = '') {
     if (key) headers.authorization = `Bearer ${key}`;
     body = { model, max_tokens: 3000, stream: false, messages: [{ role: 'system', content: system }, { role: 'user', content: inputFor(text) }] };
   }
-  return { endpoint, headers, body, format, mode, original: text, provider };
+  return { endpoint, headers, body, format, mode, level, original: text, provider };
 }
 
 async function readJsonBounded(response, signal) {
@@ -120,5 +127,5 @@ export async function enhanceWithProvider(settings, request, apiKey, { signal, f
   }
   const enhanced = normalizeEnhancedText(text, { format: call.format, original: call.original });
   if (!enhanced) throw providerError('empty-output', '模型没有返回提示词。');
-  return { enhanced, mode: call.mode, format: call.format, model: settings.model, usage, elapsedMs: Date.now() - startedAt };
+  return { enhanced, mode: call.mode, level: call.level, format: call.format, model: settings.model, usage, elapsedMs: Date.now() - startedAt };
 }

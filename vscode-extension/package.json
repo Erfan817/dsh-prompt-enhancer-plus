@@ -1,0 +1,89 @@
+{
+  "name": "prompt-spark-vscode",
+  "displayName": "Prompt Spark（提示词强化）",
+  "description": "在 VS Code / Cursor 的底部面板中一键强化提示词，支持选中文本替换与光标处插入。",
+  "version": "1.0.0",
+  "publisher": "erfan817",
+  "license": "MIT",
+  "author": "Erfan817",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Erfan817/prompt-spark.git"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "prompt",
+    "prompt-enhancer",
+    "prompt-spark",
+    "cursor",
+    "vscode"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onCommand:promptSpark.enhanceSelection",
+    "onCommand:promptSpark.enhanceInput",
+    "onCommand:promptSpark.openPanel",
+    "onView:promptSpark.panel"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "promptSpark.enhanceSelection",
+        "title": "强化选中文本",
+        "category": "Prompt Spark"
+      },
+      {
+        "command": "promptSpark.enhanceInput",
+        "title": "输入并强化",
+        "category": "Prompt Spark"
+      },
+      {
+        "command": "promptSpark.openPanel",
+        "title": "打开提示词强化面板",
+        "category": "Prompt Spark"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "promptSpark.enhanceSelection",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e"
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "promptSpark",
+          "title": "提示词强化",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "promptSpark": [
+        {
+          "id": "promptSpark.panel",
+          "name": "提示词强化",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "promptSpark.enhanceSelection",
+          "when": "editorHasSelection",
+          "group": "navigation@99"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node test-client.mjs"
+  }
+}

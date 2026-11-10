@@ -19,9 +19,16 @@ function deferred() {
 async function fixture(options = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'prompt-enhancer-server-tests-'));
   const configPath = path.join(directory, 'settings.json');
-  const server = await createCompanionServer({ configPath, fetchImpl: async () => json(completion()), ...options });
+  const { withSession = false, ...serverOptions } = options;
+  const sessionPath = withSession ? path.join(directory, 'state', 'session.json') : undefined;
+  const server = await createCompanionServer({
+    configPath,
+    ...(sessionPath === undefined ? {} : { sessionPath }),
+    fetchImpl: async () => json(completion()),
+    ...serverOptions,
+  });
   const value = {
-    ...server, directory, configPath,
+    ...server, directory, configPath, sessionPath,
     headers: () => ({ origin: server.origin, authorization: `Bearer ${server.token}`, 'content-type': 'application/json' }),
     async api(action, body = {}, overrides = {}) {
       const response = await fetch(`${server.origin}/api/${action}`, {
@@ -389,6 +396,70 @@ await test('quit sends a complete success response before closing and invokes it
   await server.close();
   assert.equal(quitCalls, 1);
   await assert.rejects(fetch(server.origin));
+});
+
+await test('enhance accepts level and context, falls back invalid level to standard, and health reports readiness', async () => {
+  const calls = [];
+  const server = await fixture({ fetchImpl: async (address, options) => { calls.push({ address, options, payload: JSON.parse(options.body) }); return json(completion('清楚说明目标。')); } });
+  await server.api('settings', modelSettings);
+  const health = await server.api('health');
+  assert.equal(health.status, 200);
+  assert.deepEqual(health.body, { ok: true, value: { ready: true, version: '1.6.0' } });
+  assertSecurityHeaders(health.headers);
+  const unauthenticated = await rawRequest(server, { method: 'POST', target: '/api/health', headers: { origin: server.origin }, chunks: ['{}'] });
+  assert.equal(unauthenticated.status, 401);
+  assert.equal(unauthenticated.body.ok, false);
+  const enhanced = await server.api('enhance', { text: '说明需求。', mode: 'task', level: 'detailed', format: 'plain', personaId: 'builtin:balanced', context: 'PROJECT_CONTEXT_XYZ' });
+  assert.equal(enhanced.status, 200);
+  assert.equal(enhanced.body.ok, true);
+  const value = enhanced.body.value;
+  assert.equal(value.enhanced, '清楚说明目标。');
+  assert.equal(value.mode, 'task');
+  assert.equal(value.level, 'detailed');
+  assert.equal(value.format, 'plain');
+  assert.equal(value.model, 'test-model');
+  assert.equal(value.usage.totalTokens, 50);
+  assert.equal(typeof value.elapsedMs, 'number');
+  assert.ok(calls[0].payload.messages[0].content.includes('Length/expansion level: detailed'));
+  assert.ok(calls[0].payload.messages[0].content.includes('PROJECT_CONTEXT_XYZ'));
+  assert.ok(calls[0].payload.messages[0].content.includes('Project context'));
+  assert.ok(calls[0].payload.messages[0].content.includes('task brief'));
+  const fallback = await server.api('enhance', { text: '说明需求。', level: 'extreme' });
+  assert.equal(fallback.body.ok, true);
+  assert.equal(fallback.body.value.level, 'standard');
+  assert.ok(calls[1].payload.messages[0].content.includes('Length/expansion level: standard'));
+  const generated = await server.api('generate', { text: '说明需求。', level: 'concise', context: 'GENERATE_CONTEXT_XYZ' });
+  assert.equal(generated.body.value.level, 'concise');
+  assert.ok(calls[2].payload.messages[0].content.includes('Length/expansion level: concise'));
+  assert.ok(calls[2].payload.messages[0].content.includes('GENERATE_CONTEXT_XYZ'));
+  assert.equal(calls.length, 3);
+  assert.equal((await server.api('enhance', { text: ' ' })).body.error.code, 'empty-input');
+  assert.equal((await server.api('enhance', { text: 'x'.repeat(12001) })).body.error.code, 'too-long');
+  const tooMuchContext = await server.api('enhance', { text: '说明需求。', context: 'x'.repeat(8001) });
+  assert.equal(tooMuchContext.status, 400);
+  assert.equal(tooMuchContext.body.error.code, 'invalid-request');
+  const wrongContext = await server.api('enhance', { text: '说明需求。', context: 123 });
+  assert.equal(wrongContext.status, 400);
+  assert.equal(wrongContext.body.error.code, 'invalid-request');
+  assert.equal((await server.api('not-an-action')).status, 404);
+  assert.equal((await rawRequest(server, { target: '/api/enhance' })).status, 405);
+  assert.equal((await rawRequest(server, { target: '/api/health' })).status, 405);
+});
+
+await test('session discovery file is written with the live origin and removed on close', async () => {
+  await assert.rejects(createCompanionServer({ configPath: path.join(tmpdir(), 'prompt-enhancer-session-invalid', 'settings.json'), sessionPath: '' }), /sessionPath/u);
+  const server = await fixture({ withSession: true });
+  const session = JSON.parse(await readFile(server.sessionPath, 'utf8'));
+  assert.deepEqual(Object.keys(session).sort(), ['origin', 'pid', 'startedAt', 'token', 'version']);
+  assert.equal(session.origin, server.origin);
+  assert.equal(session.token, server.token);
+  assert.equal(session.pid, process.pid);
+  assert.equal(session.version, '1.6.0');
+  assert.ok(!Number.isNaN(Date.parse(session.startedAt)));
+  assert.equal(path.dirname(server.sessionPath), path.join(server.directory, 'state'));
+  assert.equal((await server.api('health')).body.value.ready, true);
+  await server.close();
+  await assert.rejects(readFile(server.sessionPath, 'utf8'), (error) => error.code === 'ENOENT');
 });
 
 console.log(`local server tests passed (${passed} cases)`);

@@ -1,11 +1,16 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir, rm, writeFile, chmod } from 'node:fs/promises';
+import { rmSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { BUILTIN_PERSONAS } from '../personas.js';
 import { createSettingsStore } from './settings.mjs';
 import { enhanceWithProvider } from './provider.mjs';
 
+const VERSION = '1.6.0';
 const MAX_JSON_BYTES = 96 * 1024;
+const MAX_CONTEXT_CHARS = 8000;
+const SESSION_FILE_MODE = 0o600;
 const CLEANUP_TIMEOUT_MS = 1000;
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; frame-src 'none'; worker-src 'none'";
 const SECURITY_HEADERS = Object.freeze({
@@ -32,6 +37,24 @@ const PUBLIC_CODES = new Set([
 
 function httpError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
+}
+
+const sessionFiles = new Set();
+let sessionExitHookInstalled = false;
+
+function trackSessionFile(filePath) {
+  sessionFiles.add(filePath);
+  if (sessionExitHookInstalled) return;
+  sessionExitHookInstalled = true;
+  process.once('exit', () => {
+    for (const pending of sessionFiles) {
+      try { rmSync(pending, { force: true }); } catch { /* 进程退出时尽力清理，不阻断退出。 */ }
+    }
+  });
+}
+
+function untrackSessionFile(filePath) {
+  sessionFiles.delete(filePath);
 }
 
 function publicError(error) {
@@ -107,8 +130,9 @@ function abortable(operation, signal) {
   });
 }
 
-export async function createCompanionServer({ configPath, fetchImpl, onQuit } = {}) {
+export async function createCompanionServer({ configPath, sessionPath, fetchImpl, onQuit } = {}) {
   if (typeof configPath !== 'string' || !configPath.trim()) throw new Error('createCompanionServer 需要提供 configPath。');
+  if (sessionPath !== undefined && (typeof sessionPath !== 'string' || !sessionPath.trim())) throw new Error('createCompanionServer 的 sessionPath 必须是非空字符串。');
   const store = await createSettingsStore(configPath, undefined);
   const token = randomBytes(32).toString('base64url');
   const authorization = Buffer.from(`Bearer ${token}`);
@@ -127,8 +151,23 @@ export async function createCompanionServer({ configPath, fetchImpl, onQuit } = 
     return operation;
   };
 
+  async function writeSessionDiscoveryFile() {
+    await mkdir(dirname(sessionPath), { recursive: true });
+    const session = { origin, token, pid: process.pid, version: VERSION, startedAt: new Date().toISOString() };
+    await writeFile(sessionPath, `${JSON.stringify(session, null, 2)}\n`, { encoding: 'utf8', mode: SESSION_FILE_MODE });
+    await chmod(sessionPath, SESSION_FILE_MODE).catch(() => { /* Windows 上权限位只是尽力而为。 */ });
+    trackSessionFile(sessionPath);
+  }
+
+  async function removeSessionDiscoveryFile() {
+    if (sessionPath === undefined) return;
+    untrackSessionFile(sessionPath);
+    await rm(sessionPath, { force: true }).catch(() => { /* 文件可能已不存在或暂时无法删除。 */ });
+  }
+
   async function dispatch(action, body, response) {
     if (closing) throw httpError(503, 'server-closed', '本机服务正在退出。');
+    if (action === 'health') return { ready: true, version: VERSION };
     if (action === 'init') return {
       runtime: 'browser', settings: store.view(), shortcutAvailable: false,
       personas: BUILTIN_PERSONAS.map((persona) => ({ id: persona.id, name: persona.name.zh })),
@@ -154,7 +193,11 @@ export async function createCompanionServer({ configPath, fetchImpl, onQuit } = 
       if (response.destroyed) finishQuit();
       return true;
     }
-    if (action !== 'generate') throw httpError(404, 'not-found', '没有这个本机操作。');
+    if (action !== 'generate' && action !== 'enhance') throw httpError(404, 'not-found', '没有这个本机操作。');
+    if (body.context !== undefined && body.context !== null) {
+      if (typeof body.context !== 'string') throw httpError(400, 'invalid-request', '项目上下文必须是文本。');
+      if (body.context.length > MAX_CONTEXT_CHARS) throw httpError(400, 'invalid-request', '项目上下文最多支持 8000 个字符。');
+    }
     if (activeRequest) throw httpError(409, 'busy', '已有请求正在进行，请先取消。');
     const controller = new AbortController();
     activeRequest = controller;
@@ -166,7 +209,7 @@ export async function createCompanionServer({ configPath, fetchImpl, onQuit } = 
         ? { instructions: typeof body.direction === 'string' ? body.direction.slice(0, 4000) : '' }
         : BUILTIN_PERSONAS.find((candidate) => candidate.id === body.personaId);
       const operation = track(modelTasks, enhanceWithProvider(settings, {
-        text: body.text, mode: body.mode, format: body.format, persona,
+        text: body.text, mode: body.mode, level: body.level, format: body.format, context: body.context, persona,
       }, apiKey, { signal: controller.signal, ...(fetchImpl === undefined ? {} : { fetchImpl }) }));
       const result = await abortable(operation, controller.signal);
       controller.signal.throwIfAborted();
@@ -194,7 +237,7 @@ export async function createCompanionServer({ configPath, fetchImpl, onQuit } = 
         if (headerCount(request, 'authorization') !== 1 || supplied.length !== authorization.length || !timingSafeEqual(supplied, authorization)) {
           throw httpError(401, 'unauthorized', '本机会话凭据无效，请重新打开助手。');
         }
-        if (!['/api/init', '/api/settings', '/api/generate', '/api/cancel', '/api/quit'].includes(target)) throw httpError(404, 'not-found', '没有这个本机操作。');
+        if (!['/api/init', '/api/settings', '/api/generate', '/api/enhance', '/api/health', '/api/cancel', '/api/quit'].includes(target)) throw httpError(404, 'not-found', '没有这个本机操作。');
         const body = await readJson(request);
         const value = await dispatch(target.slice('/api/'.length), body, response);
         sendJson(response, 200, { ok: true, value });
@@ -244,6 +287,7 @@ export async function createCompanionServer({ configPath, fetchImpl, onQuit } = 
     closing = true;
     cancel();
     closePromise = (async () => {
+      await removeSessionDiscoveryFile();
       const stopped = new Promise((resolve) => { server.close(() => resolve()); });
       server.closeAllConnections();
       let cleanupTimer;
@@ -270,5 +314,13 @@ export async function createCompanionServer({ configPath, fetchImpl, onQuit } = 
   server.on('error', () => { void close().catch(() => {}); });
   expectedHost = `127.0.0.1:${server.address().port}`;
   origin = `http://${expectedHost}`;
+  if (sessionPath !== undefined) {
+    try {
+      await writeSessionDiscoveryFile();
+    } catch (error) {
+      await close().catch(() => {});
+      throw error;
+    }
+  }
   return { origin, token, close };
 }

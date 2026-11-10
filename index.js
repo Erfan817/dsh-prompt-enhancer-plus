@@ -8,11 +8,80 @@
  */
 
 import { PERSONA_DOMAIN, PERSONA_FIELDS, PersonaLibrary } from './personas.js';
-import { enhancementSystem, inputFor, normalizeEnhancedText, resolveFormat, resolveMode } from './prompt-core.js';
+import { enhancementSystem, inputFor, normalizeEnhancedText, resolveFormat, resolveLevel, resolveMode } from './prompt-core.js';
 
 export { enhancementSystem };
 
-export const inject = ['connection', 'llm', 'agents', 'agentDefaultModel', 'storageDomain'];
+export const inject = ['connection', 'llm', 'agents', 'agentDefaultModel', 'storageDomain', 'fs', 'workingDirectory'];
+
+const PROJECT_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'README.md', 'README.zh.md', 'package.json'];
+const PER_FILE_LIMIT = 6000;
+const TOTAL_LIMIT = 8000;
+
+function resolveCwd(ctx, sessionId) {
+  // `workingDirectory.get(session)` expects the Session OBJECT (it reads a
+  // per-session projection), not a session id string. Resolve the live agent
+  // first, then its session, and fall back to the plugin default directory.
+  let agent;
+  try {
+    agent = sessionId === undefined ? undefined : ctx.agents?.get?.(sessionId);
+  } catch {
+    agent = undefined;
+  }
+  const wd = ctx.workingDirectory;
+  try {
+    if (wd && typeof wd.get === 'function') {
+      const session = agent?.session;
+      if (session !== undefined && session !== null) {
+        const value = wd.get(session);
+        if (typeof value === 'string' && value.length > 0) return value;
+      }
+      // No session object (e.g. a headless tool call): use the deployment default.
+      if (typeof wd.defaultDirectory === 'string' && wd.defaultDirectory.length > 0) return wd.defaultDirectory;
+    }
+  } catch {
+    // fall through to process.cwd
+  }
+  try {
+    return typeof process !== 'undefined' && typeof process.cwd === 'function' ? process.cwd() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function loadProjectContext(ctx, sessionId, options) {
+  try {
+    if (options !== null && typeof options === 'object' && options.useProject === false) return '';
+    const fsSvc = ctx.fs;
+    if (!fsSvc || typeof fsSvc.resolve !== 'function' || typeof fsSvc.stat !== 'function' || typeof fsSvc.readText !== 'function') return '';
+    const cwd = resolveCwd(ctx, sessionId);
+    const signal = options?.signal;
+    const parts = [];
+    let total = 0;
+    for (const name of PROJECT_CANDIDATES) {
+      if (total >= TOTAL_LIMIT) break;
+      try {
+        const resolved = await fsSvc.resolve(name, { cwd, signal });
+        if (!resolved) continue;
+        const info = await fsSvc.stat(resolved);
+        if (!info || info.type !== 'file') continue;
+        if (typeof info.size === 'number' && info.size > PER_FILE_LIMIT * 8) continue;
+        let content = await fsSvc.readText(resolved, signal);
+        if (typeof content !== 'string' || content.trim().length === 0) continue;
+        const budget = Math.min(PER_FILE_LIMIT, TOTAL_LIMIT - total);
+        if (budget <= 0) break;
+        if (content.length > budget) content = content.slice(0, budget);
+        parts.push(`### ${name}\n${content.trim()}`);
+        total += content.length;
+      } catch {
+        // skip this file
+      }
+    }
+    return parts.join('\n\n');
+  } catch {
+    return '';
+  }
+}
 
 const ROUTE_PATH = '/api/prompt-enhancer-plus/enhance';
 const DEFAULT_OPTIONS = Object.freeze({
@@ -89,11 +158,15 @@ function resolveRoute(ctx, sessionId) {
  * @param {AbortSignal} signal - caller cancellation.
  * @param {object} options - resolved plugin options.
  * @param {string} mode - prompt mode: general, system, task, or concise.
+ * @param {object} [persona] - reusable enhancement persona snapshot.
+ * @param {string} [format] - output format: plain or markdown.
+ * @param {string} [level] - expansion level: concise, standard, or detailed (default standard).
  * @returns {Promise<{enhanced: string, mode: string, format: string, usage: object | null, elapsedMs: number, model: object, persona: object | null}>}
  */
-export async function enhancePromptDetailed(ctx, text, sessionId, signal, options = DEFAULT_OPTIONS, mode = 'general', persona, format = 'plain') {
+export async function enhancePromptDetailed(ctx, text, sessionId, signal, options = DEFAULT_OPTIONS, mode = 'general', persona, format = 'plain', level = 'standard') {
   const resolvedMode = resolveMode(mode);
   const resolvedFormat = resolveFormat(format);
+  const resolvedLevel = resolveLevel(level);
   const personaSnapshot = persona === undefined ? undefined : structuredClone(persona);
   const route = resolveRoute(ctx, sessionId);
   if (route === undefined) {
@@ -114,7 +187,8 @@ export async function enhancePromptDetailed(ctx, text, sessionId, signal, option
     role: 'user',
     content: [{ type: 'text', text: inputFor(text) }],
   }];
-  const system = enhancementSystem({ ...options, format: resolvedFormat }, resolvedMode, personaSnapshot);
+  const projectContext = await loadProjectContext(ctx, sessionId, options);
+  const system = enhancementSystem({ ...options, format: resolvedFormat, projectContext }, resolvedMode, personaSnapshot, resolvedLevel);
   callSignal.throwIfAborted();
   let output = '';
   let blockText = '';
@@ -202,8 +276,10 @@ async function handleEnhance(service, request) {
     : undefined;
   const mode = resolveMode(typeof payload?.mode === 'string' ? payload.mode : 'general');
   const format = resolveFormat(payload?.format);
+  const level = resolveLevel(payload?.level);
+  const useProject = typeof payload?.useProject === 'boolean' ? payload.useProject : undefined;
   try {
-    const result = await service.enhance({ text, sessionId, mode, format, personaId: payload?.personaId }, request.signal);
+    const result = await service.enhance({ text, sessionId, mode, format, level, useProject, personaId: payload?.personaId }, request.signal);
     return jsonResponse(200, result);
   } catch (error) {
     return jsonResponse(502, {
@@ -235,7 +311,8 @@ export class PromptEnhancerService {
       throw codedError('invalid-persona', 'Choose a persona id.');
     }
     const persona = this.library.resolve(request.personaId);
-    return enhancePromptDetailed(this.ctx, text, request.sessionId, signal, this.options, request.mode, persona, request.format);
+    const options = request.useProject === undefined ? this.options : { ...this.options, useProject: request.useProject };
+    return enhancePromptDetailed(this.ctx, text, request.sessionId, signal, options, request.mode, persona, request.format, request.level);
   }
 
   perform(request, signal) {
@@ -265,6 +342,8 @@ export function enhancerTool(service) {
         text: { type: 'string', description: 'Draft to enhance; required for enhance. This calls the configured model and uses tokens.' },
         mode: { type: 'string', enum: ['general', 'system', 'task', 'concise'] },
         format: { type: 'string', enum: ['plain', 'markdown'], description: 'For enhance: plain text by default; optionally Markdown.' },
+        level: { type: 'string', enum: ['concise', 'standard', 'detailed'], description: 'For enhance: expansion level. Defaults to standard.' },
+        useProject: { type: 'boolean', description: 'For enhance: read project files (AGENTS.md, CLAUDE.md, README, package.json) as reference context. Defaults to true.' },
         personaId: { type: 'string', description: 'For enhance: omit to use the profile default; empty string uses no persona.' },
       },
       required: ['action'],

@@ -27,7 +27,7 @@ function updateActions() {
   elements.copy.disabled = !elements.result.value.trim();
   elements.result.readOnly = busy;
   elements.cancel.hidden = !busy;
-  for (const control of [elements.mode, elements.persona, elements.format, elements.direction, elements.settings]) control.disabled = serviceStopped || busy;
+  for (const control of [elements.mode, elements.level, elements.persona, elements.format, elements.direction, elements.settings]) control.disabled = serviceStopped || busy;
 }
 
 function updateDirection() {
@@ -70,7 +70,7 @@ async function generate() {
   updateActions();
   try {
     const result = await api.generate({
-      text: original, mode: elements.mode.value, format: elements.format.value,
+      text: original, mode: elements.mode.value, level: elements.level.value, format: elements.format.value,
       personaId: elements.persona.value, direction: elements.direction.value,
     });
     if (generation !== requestId) return;
@@ -79,7 +79,8 @@ async function generate() {
     elements.emptyState.hidden = true;
     elements.draftPanel.open = false;
     const usage = result.usage?.totalTokens ?? ((result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0));
-    elements.metadata.textContent = `${result.model} · ${result.format === 'markdown' ? 'Markdown' : '自然纯文本'} · ${(result.elapsedMs / 1000).toFixed(1)} 秒${usage ? ` · ${usage} tokens` : ' · 用量未提供'}。切换方式或格式后，重新强化会再次调用模型。`;
+    const levelLabel = result.level === 'concise' ? '简洁' : result.level === 'detailed' ? '详细' : '标准';
+    elements.metadata.textContent = `${result.model} · ${result.format === 'markdown' ? 'Markdown' : '自然纯文本'} · 详细度：${levelLabel} · ${(result.elapsedMs / 1000).toFixed(1)} 秒${usage ? ` · ${usage} tokens` : ' · 用量未提供'}。切换方式、详细度或格式后，重新强化会再次调用模型。`;
     autosize(elements.result);
     elements.workspace.scrollTop = 0;
     setStatus(elements.draft.value === original ? '已强化。可以直接编辑，再复制到你要用的 Agent。' : '已生成点击时原文的结果；你后来修改的原文没有被覆盖。');

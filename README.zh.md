@@ -2,11 +2,20 @@
 
 [English](README.md) · 中文
 
-当前源码版本：**1.4.0**。GitHub Release 和 npm 独立发布，源码更新不代表已发布新的安装包版本。
+当前源码版本：**1.6.0**。GitHub Release 和 npm 独立发布，源码更新不代表已发布新的安装包版本。
 
 项目现已更名为 **Prompt Spark（提示词火花）**。为兼容已有安装，DSH 插件及 npm 包标识仍保留 `dsh-prompt-enhancer-plus`。
 
-一个增强核心，两种入口：在 DeepSeek Harness 中直接强化草稿，或用独立桌面窗口生成提示词，再复制到 Claude、Codex 及其他 AI 软件。不会自动发送消息。
+一个增强核心，多个入口：在 DeepSeek Harness 里用原生输入框按钮，在 VS Code / Cursor 里用底部面板按钮，在 Claude Code 里用 `/enhance` 命令，在任何其他软件（ChatGPT 桌面版、Claude 桌面版等）里用全局热键。除 DSH 外，其余入口共用同一个本机服务。不会自动发送消息。
+
+## 1.6 的变化
+
+- **一个本机强化服务**：`npm run desktop` 现在额外提供稳定的 `POST /api/enhance` 与 `POST /api/health`，并在 `%APPDATA%/prompt-enhancer-plus-local/session.json` 写入发现文件（`origin` / `token` / `pid` / `version` / `startedAt`）。下面所有适配器都复用这个服务与同一套 `prompt-core.js` 规则。
+- **VS Code / Cursor 扩展**：底部面板输入框 + ✨ 强化按钮、选中文本替换命令、`Ctrl+Alt+E` 快捷键；同一个 VSIX 可装进两者。
+- **任意软件全局热键（Windows）**：`hotkey-tool/` 注册 `Ctrl+Alt+E`，在 ChatGPT 桌面版、Claude 桌面版或任何软件里选中文字按下热键，强化结果写回剪贴板（绝不自动粘贴）。
+- **通用 CLI**：`cli/enhance.mjs` 可用于终端或管道：`echo "..." | node cli/enhance.mjs --level detailed`。
+- **Claude Code 集成**：`/enhance` 斜杠命令，以及可选的 `UserPromptSubmit` hook（只能追加附加上下文，不能替换用户原文）。
+- **面向 AI 的结构化输出**：三档现在都输出轻量语义骨架 —— `Task:`、`Requirements:`、`Acceptance criteria:`、`Constraints:`，`detailed` 再增加 `Context:` 与 `Failure cases:`。骨架是纯文本（不是 Markdown/JSON），无内容的小节自动省略，句子仍是自然语言，人也能读。
 
 ## 1.4 的变化
 
@@ -98,11 +107,78 @@ npm run desktop:electron
 
 ### 当前跨端边界
 
-本轮提供的是独立本机网页窗口与 DSH 原生入口，不包括 Claude / Codex 的原生输入框插件、MCP 服务、MCP Apps 或自动草稿读写。以后可基于共享核心另加适配，但每个宿主仍需独立验证。默认窗口可在桌面浏览器中使用，源代码面向 Windows / macOS / Linux；没有承诺各操作系统已完成视觉验收，也未制作签名安装器。
+桌面窗口仍是本机网页窗口，不是 Claude / Codex 的原生输入框插件，也不是 MCP 服务或 MCP Apps；它不读取也不改写其他软件的输入框，绝不自动粘贴或自动发送。下一节的适配器都只是同一个本机服务的薄客户端，各自受宿主自身扩展能力限制。
+
+## 跨 harness 接入
+
+所有适配器调用同一个本机服务，因此使用同一套 `prompt-core.js` 规则。先启动服务：
+
+```sh
+npm run desktop
+```
+
+保持该终端运行。它会把本机地址与令牌写入 `%APPDATA%/prompt-enhancer-plus-local/session.json`，所有适配器都读取这个文件。在窗口点 **退出** 或按 `Ctrl+C` 结束。
+
+### VS Code 与 Cursor
+
+扩展位于 `vscode-extension/`，只使用标准 VS Code API，因此同一个包可同时用于两者。
+
+```sh
+cd vscode-extension
+npx @vscode/vsce package --allow-missing-repository
+code --install-extension prompt-spark-vscode-1.0.0.vsix
+# Cursor：
+cursor --install-extension prompt-spark-vscode-1.0.0.vsix
+```
+
+- **底部面板**：在 Panel 区打开 **提示词强化**，输入草稿、选择详细度、点 **✨ 强化**，再复制或插入。
+- **选中文本**：在编辑器选中文字，运行 `Prompt Spark: 强化选中文本`（`Ctrl+Alt+E` / `Cmd+Alt+E`）。
+- **输入框**：`Prompt Spark: 输入草稿并强化` 会把结果插入光标处。
+- **限制**：Cursor 的 AI Chat 面板是私有的，扩展无法向其中注入按钮；请用底部面板或快捷键后粘贴。
+
+### Claude Code（桌面版 / CLI）
+
+Claude Code 只提供自定义斜杠命令，没有 UI 按钮。
+
+- 把 `.claude/commands/enhance.md` 复制到 `<项目>/.claude/commands/enhance.md` 或 `~/.claude/commands/enhance.md`。
+- 运行 `/enhance 帮我做一个导出 CSV 的功能`。
+- 若仓库不在默认路径，设置 `PROMPT_SPARK_CLI`。
+- 可选：`claude-code/hooks/user-prompt-submit.mjs` 在 `UserPromptSubmit` 时把结构化版本作为附加上下文提供给模型；hook 不能替换用户原文，且只有 `PROMPT_SPARK_HOOK=1` 时才生效。
+
+详见 [`claude-code/README.md`](claude-code/README.md)。
+
+### 任意软件：Windows 全局热键
+
+对 ChatGPT 桌面版、Claude 桌面版或任何没有扩展 API 的软件，使用 `hotkey-tool/`：
+
+```powershell
+hotkey-tool\start-hotkey.cmd
+```
+
+在任意位置选中文字，按 `Ctrl+Alt+E`：工具会复制选区、完成强化、把结果写回剪贴板并弹出托盘提示。绝不自动粘贴。需要 Windows 与 PowerShell 7。详见 [`hotkey-tool/README.md`](hotkey-tool/README.md)。
+
+### 终端与管道
+
+```sh
+echo "帮我做一个导出 CSV 的功能" | node cli/enhance.mjs --level detailed
+node cli/enhance.mjs --text "..." --context-file AGENTS.md --copy
+```
+
+`cli/enhance.mjs` 的 stdout 只输出强化结果，便于管道组合；`--json` 输出完整结果对象。
+
+### 哪些 harness 能在自己的输入框里放按钮？
+
+| Harness | 原生输入框按钮 | 现实方案 |
+| --- | --- | --- |
+| dsh | 可以 | 内置 composer 工具栏（本插件） |
+| VS Code | 不可以 | 底部面板 webview + 命令 + 快捷键 |
+| Cursor | 不可以 | 与 VS Code 同一个 VSIX |
+| Claude Code | 不可以 | `/enhance` 斜杠命令、可选 hook，或全局热键 |
+| ChatGPT 桌面版 | 不可以 | 全局热键 + 剪贴板 |
 
 ## 纯文本与符号保真
 
-默认格式由生成规则约束：用自然段表达，不添加 Markdown 装饰，不强迫“角色 / 目标 / 约束 / 输出”的结构。用户任务里要求的交付格式仍保留，例如“写一个 Markdown 文档”不会被改成“不要用 Markdown”。
+默认格式由生成规则约束：用轻量语义骨架表达 —— `Task:`、`Requirements:`、`Acceptance criteria:`、`Constraints:`（`detailed` 再增加 `Context:` 与 `Failure cases:`），标签后使用自然语言句子，无内容的小节自动省略；不添加 Markdown 标题、加粗或装饰列表，也不输出 JSON/YAML/XML，除非草稿明确要求机器格式。用户任务里要求的交付格式仍保留，例如“写一个 Markdown 文档”不会被改成“不要用 Markdown”。
 
 兜底清理只处理可识别的模型外包装与新增的明确标题装饰，不会全局删除星号、井号或反引号。`C#`、`*.ts`、标签、命令、公式、代码和原文中的有意义例子需要保留。模型规则不是对任意输出的数学保证；保真不确定时宁可保留符号，由你在预览中核对。
 
@@ -123,19 +199,31 @@ npm run desktop:electron
       Rewrite the request as a concise task brief.
 ```
 
-需要 DSH 0.2.2-rc.1 或兼容更新版本，Host 提供 `connection`、`llm`、`agents`、`agentDefaultModel`、`storageDomain`。现有图标为插件保留的原创闪光图形，未借用第三方品牌图标。
+需要 DSH 0.2.2-rc.1 或兼容更新版本，Host 提供 `connection`、`llm`、`agents`、`agentDefaultModel`、`storageDomain`、`fs` 与 `workingDirectory`（后两者用于读取项目感知上下文；缺失时自动降级为无项目上下文）。现有图标为插件保留的原创闪光图形，未借用第三方品牌图标。
 
 `systemPrompt` 仍替换内置模式提示，之后叠加所选人格。格式、语言、事实、范围和只改写不执行的基础规则最后追加，并优先于冲突的自定义方向。默认不新增模型调用次数。
 
 ### API 与工具
 
-`POST /api/prompt-enhancer-plus/enhance` 保持 `text`、`sessionId`、`mode`、`personaId`，新增可选 `format: "plain" | "markdown"`，缺省 `plain`。响应保持原来的文本、用量、耗时、模型和人格快照字段，并增加 `format`。
+`POST /api/prompt-enhancer-plus/enhance` 保持 `text`、`sessionId`、`mode`、`personaId`，新增可选 `format: "plain" | "markdown"`（缺省 `plain`）与可选 `level: "concise" | "standard" | "detailed"`（缺省 `standard`）。响应保持原来的文本、用量、耗时、模型和人格快照字段，并增加 `format`。
 
 人格接口继续复用 Host 认证：`GET /api/prompt-enhancer-plus/personas` 读取；`POST` 支持 `list`、`save`、`select`、`delete`，修改需要最新 `expectedRevision`。
 
-`prompt_enhancer` 工具调用同一应用操作。先 `list` 获取版本再修改人格；`enhance` 接受可选 `format`。工具不发送消息、不替换输入框、不改权限。
+`prompt_enhancer` 工具调用同一应用操作。先 `list` 获取版本再修改人格；`enhance` 接受可选 `format`、`level` 与 `useProject`。工具不发送消息、不替换输入框、不改权限。
 
-共享核心导出 `resolveMode`、`resolveFormat`、`enhancementSystem`、`inputFor`、`normalizeEnhancedText`，也可通过包子路径 `dsh-prompt-enhancer-plus/core` 引用。无 DSH、Node 或模型 SDK 依赖。
+共享核心导出 `resolveMode`、`resolveFormat`、`resolveLevel`、`enhancementSystem`、`inputFor`、`normalizeEnhancedText`，也可通过包子路径 `dsh-prompt-enhancer-plus/core` 引用。无 DSH、Node 或模型 SDK 依赖。
+
+### 本机服务 API（跨 harness）
+
+`npm run desktop` 运行时，同一进程还提供供 VS Code / Cursor 扩展、CLI、热键工具与 Claude Code hook 使用的小接口：
+
+```text
+POST /api/enhance   { text, mode?, level?, format?, personaId?, direction?, context? }
+                    → { ok: true, value: { enhanced, mode, level, format, model, usage, elapsedMs } }
+POST /api/health    → { ok: true, value: { ready: true, version } }
+```
+
+每个 `/api/*` 请求都必须携带 `%APPDATA%/prompt-enhancer-plus-local/session.json` 中的 Bearer 令牌，并且 `Origin` 头必须等于该文件的 `origin`。不开放 CORS，不监听局域网。`context` 上限 8000 字符；未知 `level` 回退 `standard`。
 
 ## DSH 存储与兼容
 
