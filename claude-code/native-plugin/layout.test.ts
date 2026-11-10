@@ -17,6 +17,9 @@ for (const surface of ['desktop', 'terminal'] as const) {
   test(`${surface}: full-width editor has a separate heading and collapsible original`, async ($, on) => {
     const clock = mock.clock(on)
     on('prompt.read', () => ({ value: { text: '原始草稿', cursor: 4 } }))
+    on('session.cwd', () => ({ value: '/project' }))
+    on('env.get', () => ({ value: undefined }))
+    on('fs.exists', () => ({ value: false }))
     on('session.model', () => ({ value: 'test' }))
     on('ui.open', () => ({ value: { isPlaced: true } }))
     on('model.complete', () => ({ value: { isAnswered: true, text: 'Task: 强化结果', usage } }))

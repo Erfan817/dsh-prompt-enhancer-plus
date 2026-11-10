@@ -2,9 +2,11 @@
 
 ## 原生插件（推荐，需宿主支持 function hooks）
 
-新增 [`native-plugin/`](native-plugin/README.md)：输入区上方「✨ 强化」→ 可编辑预览 → 确认替换草稿，可复制、取消和撤销，不自动发送。复用根目录 `prompt-core.js`，通过宿主 `$.model.complete` 调用当前会话模型，不需要 Electron、本机 HTTP 服务、CLI 中介或额外 API Key；调用仍按宿主凭据计量。
+新增 [`native-plugin/`](native-plugin/README.md)：输入区品牌图标旁「强化」→ 可编辑预览 → 确认替换草稿，可复制、取消和撤销，不自动发送。复用根目录 `prompt-core.js`，通过宿主 `$.model.complete` 调用当前会话模型，不需要 Electron、本机 HTTP 服务、CLI 中介或额外 API Key；调用仍按宿主凭据计量。
 
 这是原生 function hooks 插件，不是 Skill。开发依据本环境生成的 Claude Code 2.1.321 early-access 接口；需要宿主支持 `hooks.modules`、`AbovePrompt`、`$.prompt.read/fill` 和 `$.model.complete`，不能保证所有版本或桌面部署都支持。验证通过不等同于已在真实桌面 Composer 完成端到端测试。安装、使用和能力边界见 [原生插件指南](native-plugin/README.md)。
+
+0.2.0 同步 DSH 的文字编辑 Skill 参考、本机约定目录发现、手选最多三个和预览内连续强化。参考作为数据发送至当前模型，不执行脚本；原生插件不依赖 DSH 注册表。失败/取消保留预览，原草稿变化后仍禁止覆盖。
 
 从源码在交互式终端试用（不修改全局配置）：
 

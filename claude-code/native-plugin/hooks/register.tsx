@@ -3,13 +3,15 @@ import type { EngineInterface, Register, RenderSurface } from 'claude-code'
 import type { Level, Preview } from '../types'
 import { enhancementSystem, inputFor, normalizeEnhancedText } from './prompt-core.js'
 import { BRAND_ICON } from './brand.js'
+import { discover, loadReferences, matchSkills } from './skills'
 
 const PANE = 'prompt-spark-preview'
 const initial: Preview = {
   phase: 'idle', level: 'standard', original: '', enhanced: '', error: '',
   stale: false, sourceEpoch: 0, undo: null, showOriginal: false,
+  useSkills: true, showSkills: false, skillsLoading: false, catalog: null, skillNames: null, usedSkills: [], skillWarnings: [],
 }
-const preview = atom({ plugin: 'prompt-spark-native', key: 'preview' } as const, initial, { shape: 'preview-2' })
+const preview = atom({ plugin: 'prompt-spark-native', key: 'preview' } as const, initial, { shape: 'preview-3' })
 const levels = [
   { value: 'concise', label: '简洁' },
   { value: 'standard', label: '标准' },
@@ -18,6 +20,7 @@ const levels = [
 
 // Only transient handles live here. Drafts and render state belong to $.state.
 let active: AbortController | undefined
+let scan: AbortController | undefined
 let epoch = 0
 let working = false
 let applying = false
@@ -29,13 +32,14 @@ const open = async ($: EngineInterface) => {
   return result.isPlaced
 }
 const error = async ($: EngineInterface, message: string) => {
-  await update($, preview, s => ({ ...s, phase: 'error', error: message }))
+  await update($, preview, s => ({ ...s, phase: s.enhanced ? 'preview' : 'error', error: message }))
 }
 const cancel = async ($: EngineInterface) => {
+  scan?.abort(); scan = undefined
   const controller = active
   active = undefined
   controller?.abort()
-  await update($, preview, s => ({ ...s, phase: s.enhanced ? 'preview' : 'idle', error: '' }))
+  await update($, preview, s => ({ ...s, phase: s.enhanced ? 'preview' : 'idle', error: '', skillsLoading: false }))
 }
 const observe = async ($: EngineInterface) => {
   epoch += 1
@@ -44,7 +48,24 @@ const observe = async ($: EngineInterface) => {
     undo: null,
   }))
 }
-const enhance = async ($: EngineInterface) => {
+const refreshSkills = ($: EngineInterface) => {
+  if (scan || active) return
+  const controller = new AbortController()
+  scan = controller
+  $.clock.after(1, () => scanSkills($, controller))
+}
+const scanSkills = async ($: EngineInterface, controller: AbortController) => {
+  if (scan !== controller) return
+  try {
+    await update($, preview, s => ({ ...s, skillsLoading: true }))
+    const catalog = await discover($, controller.signal)
+    if (scan === controller) await update($, preview, s => ({ ...s, catalog, skillsLoading: false }))
+  } catch {
+    if (scan === controller) await update($, preview, s => ({ ...s, skillsLoading: false,
+      catalog: { status: 'unavailable', entries: [], diagnostics: [] } }))
+  } finally { if (scan === controller) scan = undefined }
+}
+const enhance = async ($: EngineInterface, fromPreview = false) => {
   if (active || applying || working) return
   const controller = new AbortController()
   active = controller
@@ -54,28 +75,42 @@ const enhance = async ($: EngineInterface) => {
     if (active !== controller) return
     // Return the generation promise to the timer host, not to the click handler.
     // The timer host owns its lifetime and observes failures through generate.
-    $.clock.after(1, () => generate($, controller))
+    $.clock.after(1, () => generate($, controller, fromPreview))
   } catch {
     if (active === controller) await cancel($)
   }
 }
-const generate = async ($: EngineInterface, controller: AbortController) => {
+const generate = async ($: EngineInterface, controller: AbortController, fromPreview: boolean) => {
   if (active !== controller) return
   try {
     const sourceEpoch = epoch
     const box = await $.prompt.read()
-    if (!box.text.trim()) { $.ui.toast('先在输入框写下需要强化的草稿。'); return }
-    if (box.text.length > 12000) { $.ui.toast('草稿超过 12000 字符，请缩短后重试；不会截断后发送。'); return }
-    const { level } = await read($, preview)
+    const previous = await read($, preview)
+    const text = fromPreview ? previous.enhanced : box.text
+    if (!text.trim()) { $.ui.toast('先写下需要强化的内容。'); return }
+    if (text.length > 12000) { $.ui.toast('内容超过 12000 字符，请缩短后重试；不会截断后发送。'); return }
+    const { level } = previous
     if (active !== controller) return
-    await update($, preview, s => ({ ...s, phase: 'busy', original: box.text,
-      enhanced: '', error: '', stale: false, sourceEpoch, undo: null }))
+    await update($, preview, s => ({ ...s, phase: 'busy', error: '', undo: null,
+      ...(fromPreview ? {} : { original: box.text, enhanced: '', stale: false, sourceEpoch }),
+      usedSkills: [], skillWarnings: [] }))
+    let references = { context: '', used: [] as string[], warnings: [] as string[] }
+    if (previous.useSkills) {
+      const catalog = previous.catalog ?? await discover($, controller.signal).catch(() => ({
+        status: 'unavailable' as const, entries: [], diagnostics: [],
+      }))
+      if (active !== controller) return
+      await update($, preview, s => ({ ...s, catalog }))
+      references = await loadReferences($, catalog.entries,
+        previous.skillNames ?? matchSkills(catalog.entries, text), controller.signal)
+      if (catalog.status !== 'ready') references.warnings.push('Skill 目录仅部分可用或扫描失败，已使用可读取的参考。')
+    }
     if (active !== controller) return
     const model = await $.session.model()
     const result = await $.model.complete({
       model,
-      system: enhancementSystem({}, 'general', undefined, level),
-      prompt: inputFor(box.text),
+      system: enhancementSystem({ skillContext: references.context }, 'general', undefined, level),
+      prompt: inputFor(text),
       maxTokens: 6000,
       effort: 'low',
       timeoutMs: 60000,
@@ -89,10 +124,11 @@ const generate = async ($: EngineInterface, controller: AbortController) => {
       await error($, message)
       return
     }
-    const enhanced = normalizeEnhancedText(result.text, { original: box.text })
+    const enhanced = normalizeEnhancedText(result.text, { original: text })
     if (!enhanced) { await error($, '模型返回了空结果，草稿未改动。'); return }
     await update($, preview, s => ({ ...s, phase: 'preview', enhanced,
-      stale: s.stale || epoch !== sourceEpoch, error: '' }))
+      stale: s.stale || epoch !== (fromPreview ? previous.sourceEpoch : sourceEpoch), error: '',
+      usedSkills: references.used, skillWarnings: references.warnings }))
   } catch {
     if (active === controller) await error($, '无法完成强化，请检查插件权限与模型配置。草稿未改动。')
   } finally {
@@ -199,6 +235,7 @@ export const register: Register = on => {
   })
   on('turn.complete', (_, e, next) => { if (!e.agentId) working = false; return next(e) })
   on('session.end', async ($, e, next) => {
+    scan?.abort(); scan = undefined
     await cancel($)
     await update($, preview, () => ({ ...initial }))
     return next(e)
@@ -234,6 +271,32 @@ export const register: Register = on => {
           ? <Box alignItems="center" gap="sm"><Text>正在强化…</Text><Button key="cancel" label="取消" onPress={() => cancel($)} /></Box>
           : <Button key="generate" label={s.enhanced ? '重新强化' : '强化当前草稿'} onPress={() => enhance($)} />}
       </Box>
+      <Box flexDirection="column" gap="xs">
+        <Button key="skills" plain label={s.showSkills ? '收起参考 Skill' : '参考 Skill'}
+          onPress={() => update($, preview, current => ({ ...current, showSkills: !current.showSkills }))} />
+        {s.showSkills && <Box flexDirection="column" gap="xs">
+          <Text dimColor>仅参考文字编辑类 Skill，不执行脚本；最多选 3 个。参考正文会发给当前模型。</Text>
+          <Select key="skills-mode" label="参考方式" value={!s.useSkills ? 'off' : s.skillNames === null ? 'auto' : 'manual'}
+            options={[{ value: 'off', label: '关闭' }, { value: 'auto', label: '自动匹配' }, { value: 'manual', label: '手动选择' }]}
+            onSelect={value => update($, preview, current => ({ ...current, useSkills: value !== 'off', skillNames: value === 'manual' ? current.skillNames ?? [] : null }))} />
+          <Button key="refresh-skills" label={s.skillsLoading ? '正在扫描…' : '刷新本机 Skill'} onPress={() => refreshSkills($)} />
+          <Text dimColor>{s.catalog ? `发现 ${s.catalog.entries.length} 个文字编辑 Skill（${s.catalog.status}）` : '尚未扫描；首次强化或刷新时按需发现。'}</Text>
+          {(s.catalog?.entries ?? []).map(skill => <Box flexDirection="column" gap="xs">
+            <Button key={`skill-${skill.name}`} plain label={`${s.skillNames?.includes(skill.name) ? '✓ ' : ''}${skill.name}`}
+              onPress={async () => {
+                if (active) return
+                await update($, preview, current => {
+                  const names = current.skillNames ?? []
+                  return { ...current, useSkills: true, skillNames: names.includes(skill.name) ? names.filter(n => n !== skill.name) : names.length < 3 ? [...names, skill.name] : names }
+                })
+              }} />
+            <Text dimColor>{skill.description}</Text><Text dimColor>{skill.source}: {skill.path}</Text>
+          </Box>)}
+          {(s.catalog?.diagnostics ?? []).filter(d => d.status !== 'missing').map(d => <Text dimColor>{d.path}: {d.status}（{d.count}）</Text>)}
+        </Box>}
+      </Box>
+      {!!s.usedSkills.length && <Text dimColor>本次参考：{s.usedSkills.join('、')}</Text>}
+      {s.skillWarnings.map(warning => <Text dimColor>{warning}</Text>)}
       {!!s.error && <Text>{s.error}</Text>}
       {!!s.enhanced ? <Box flexDirection="column" width="100%" alignItems="stretch" gap="xs">
         <Text bold>强化结果</Text>
@@ -243,6 +306,7 @@ export const register: Register = on => {
             onSubmit={value => update($, preview, current => ({ ...current, enhanced: value }))} />
         </Box>
         <Text dimColor>可以直接编辑，确认后替换。不会自动发送。</Text>
+        {s.phase !== 'busy' && <Button key="iterate" label="再次强化预览" onPress={() => enhance($, true)} />}
         {s.stale && <Text>原草稿已改变或结果已应用。请复制结果，或重新强化。</Text>}
       </Box> : s.phase !== 'busy' && !s.error && <Text dimColor>在主输入框写下草稿，再点击强化。生成后可在这里编辑。</Text>}
       {!!s.original && <Box flexDirection="column" gap="xs">

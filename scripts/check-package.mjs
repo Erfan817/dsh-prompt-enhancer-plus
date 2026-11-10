@@ -19,6 +19,7 @@ for (const required of [
   'claude-code/native-plugin/hooks/register.tsx',
   'claude-code/native-plugin/hooks/prompt-core.js',
   'claude-code/native-plugin/hooks/brand.js',
+  'claude-code/native-plugin/hooks/skills.ts',
   'claude-code/native-plugin/types/index.d.ts',
 ]) assert.ok(names.has(required), `Package is missing ${required}`);
 for (const name of names) {

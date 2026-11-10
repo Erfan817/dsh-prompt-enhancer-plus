@@ -1,6 +1,6 @@
 {
   "name": "prompt-spark-native",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "在 Claude Code 输入区强化草稿，审阅后回填；无需本机服务，不自动发送。",
   "types": "./types/index.d.ts",
   "license": "MIT",
