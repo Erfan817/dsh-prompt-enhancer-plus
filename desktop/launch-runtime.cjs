@@ -48,7 +48,15 @@ function resolveRuntime(sourceDirectory, executable, { platform = process.platfo
     fs.mkdirSync(root, { recursive: true });
     const temporary = path.join(root, `.preparing-${randomUUID()}`);
     try {
-      fs.cpSync(sourceDirectory, temporary, { recursive: true, errorOnExist: true, force: false });
+      // Use the same explicit directory traversal as the manifest. Avoid the
+      // native recursive cpSync path, which can terminate Windows Node 22
+      // without a JavaScript error when copying this runtime tree.
+      fs.mkdirSync(temporary);
+      for (const [relative] of files) {
+        const destination = path.join(temporary, relative);
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        fs.copyFileSync(path.join(sourceDirectory, relative), destination, fs.constants.COPYFILE_EXCL);
+      }
       fs.writeFileSync(path.join(temporary, '.prompt-spark-runtime.json'), JSON.stringify(files), { flag: 'wx' });
       try { fs.renameSync(temporary, target); }
       catch (error) { if (!usable()) throw error; }
