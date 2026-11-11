@@ -4,20 +4,160 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Prompt Spark · 提示词火花</title>
 <style>
-:root{color-scheme:light dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:light-dark(#222b43,#e7eafa);background:light-dark(#fff,#171a23)}*{box-sizing:border-box}body{margin:0;padding:24px;max-width:900px;margin-inline:auto}header{display:flex;align-items:center;gap:12px;margin-bottom:24px}.mark{background:#4d6bfe;color:white;border-radius:13px;width:44px;height:44px;display:grid;place-items:center;font-size:28px}h1{font-size:19px;margin:0}header p{margin:4px 0 0;font-size:12px;color:light-dark(#6c7486,#a7aec0)}label{font-size:13px;font-weight:600;display:block;margin-bottom:9px}textarea{width:100%;resize:vertical;min-height:140px;border:1px solid light-dark(#dbe0ec,#3b4355);border-radius:12px;background:light-dark(#fafbfe,#202532);color:inherit;padding:14px;font-size:14px;font-family:inherit;line-height:1.7;outline:none}textarea:focus{border-color:#7085ff;box-shadow:0 0 0 3px #4d6bfe18}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0 24px}select,button{font:inherit;font-size:13px;border:1px solid light-dark(#dbe0ec,#3b4355);border-radius:9px;padding:10px 14px;color:inherit;background:light-dark(#fff,#242a38)}button{cursor:pointer}button.primary{background:#4d6bfe;color:#fff;border-color:#4d6bfe}button:disabled{opacity:.45;cursor:default}.hint{font-size:12px;line-height:1.6;color:light-dark(#6c7486,#a7aec0);margin:8px 0 0}.status{font-size:12px;line-height:1.6;min-height:20px;margin-top:14px}#preview{min-height:190px}.spacer{flex:1}[hidden]{display:none!important}@media(max-width:440px){body{padding:16px}.row{gap:7px}button{padding:10px}h1{font-size:17px}}
+:root{
+  color-scheme:light dark;
+  --pe-brand:#5563f5;
+  --pe-field:light-dark(#f4f5f9,#242735);
+  --pe-scrim:rgba(20,24,48,.28);
+  --pe-surface:light-dark(#fff,#1b1e2a);
+  --pe-layer:light-dark(#fcfcff,#20232f);
+  --pe-hover:light-dark(#f4f5fa,#2b2f40);
+  --pe-text:light-dark(#1f2230,#e7eafa);
+  --pe-muted:light-dark(#727a90,#a6adc3);
+  --pe-border:light-dark(#e0e3ef,#393e52);
+  --pe-select-border:light-dark(#d1d6e7,#484e65);
+  font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  color:var(--pe-text);
+  background:var(--pe-scrim);
+}
+*{box-sizing:border-box}
+body{margin:0;height:100vh;height:100dvh;display:grid;place-items:center;padding:clamp(12px,3vw,36px);font-size:14px}
+.pe-workspace{display:grid;grid-template-rows:auto minmax(0,1fr) auto;width:min(1120px,100%);height:min(88vh,980px);height:min(88dvh,980px);max-height:100%;min-height:0;border:1px solid var(--pe-border);border-radius:18px;background:var(--pe-surface);box-shadow:0 18px 60px rgba(20,24,48,.18);overflow:hidden}
+.pe-workspace-head{display:flex;align-items:center;gap:14px;padding:22px 26px 8px;min-width:0}
+.pe-brand{display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:13px;background:linear-gradient(150deg,color-mix(in srgb,var(--pe-brand) 82%,#fff),var(--pe-brand));color:#fff;box-shadow:0 6px 14px color-mix(in srgb,var(--pe-brand) 32%,transparent)}
+.pe-brand svg{display:block;width:24px;height:24px}
+.pe-head-text{min-width:0}
+.pe-workspace-title{margin:0;font-size:22px;font-weight:700;letter-spacing:.2px;line-height:1.35}
+.pe-workspace-sub{margin:3px 0 0;color:var(--pe-muted);font-size:13.5px;line-height:1.4}
+.pe-wordmark{margin-left:auto;color:var(--pe-muted);font-size:12px;white-space:nowrap}
+/* One shared scroll area keeps the rail and document in normal flow at every width. */
+.pe-workspace-body{display:grid;grid-template-columns:minmax(0,1fr) 280px;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;align-content:start}
+.pe-document{min-width:0;padding:10px 26px 18px}
+.pe-output-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 0}
+.pe-output-controls label{font-size:14px;font-weight:600}
+.pe-mode-note{display:inline-flex;align-items:center;gap:6px;margin-left:auto;color:var(--pe-muted);font-size:12px}
+.pe-mode-note::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--pe-brand)}
+select{max-width:100%;min-height:38px;padding:0 34px 0 14px;border:1px solid var(--pe-select-border);border-radius:10px;background-color:var(--pe-surface);color:inherit;font:inherit;font-size:14px;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%238a8fa3' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center;cursor:pointer}
+.pe-help{margin:12px 0;color:var(--pe-muted);font-size:13.5px;line-height:1.7;overflow-wrap:anywhere}
+.pe-section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 0 12px;min-height:24px}
+.pe-section-heading label{font-size:15px;font-weight:700;line-height:1.5}
+.pe-original-card,.pe-preview-text{display:block;width:100%;min-height:112px;margin:0;padding:16px 18px;border:1px solid var(--pe-border);border-radius:12px;background:var(--pe-field);color:var(--pe-text);font:inherit;font-size:15px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere;resize:vertical}
+.pe-original-card{min-height:80px}
+.pe-preview-text{min-height:34vh;min-height:34dvh}
+textarea::placeholder{color:var(--pe-muted);opacity:1}
+textarea:focus-visible{outline:none;border-color:var(--pe-brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--pe-brand) 14%,transparent)}
+.pe-editor-hint{margin:18px 0 10px}
+.pe-details{margin-top:22px;padding-top:16px;border-top:1px solid var(--pe-border);font-size:13px;color:var(--pe-muted)}
+.pe-details summary{width:fit-content;max-width:100%;cursor:pointer;line-height:1.7}
+.pe-details .pe-help{font-size:13px}
+.pe-persona-rail{align-self:stretch;min-width:0;margin:10px 26px 18px 8px;padding:16px;border:1px solid var(--pe-border);border-radius:12px;background:var(--pe-layer)}
+.pe-rail-title{margin:0;font-size:13px;font-weight:600;color:var(--pe-muted);line-height:1.6}
+.pe-level-guide{margin:16px 0 0}
+.pe-level-guide dt{margin-top:20px;font-size:14px;font-weight:600}
+.pe-level-guide dt:first-child{margin-top:0}
+.pe-level-guide dd{margin:6px 0 0;color:var(--pe-muted);font-size:13px;line-height:1.7}
+.pe-rail-note{margin-top:24px;padding-top:16px;border-top:1px solid var(--pe-border)}
+.pe-rail-note .pe-help{margin-bottom:0;font-size:13px}
+.pe-workspace-footer{display:flex;flex-direction:column;gap:12px;padding:10px 26px 20px;background:var(--pe-surface)}
+.pe-footer-actions,.pe-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pe-actions.pe-right{margin-left:auto}
+.pe-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:0 20px;border:1px solid var(--pe-border);border-radius:10px;background:var(--pe-surface);color:var(--pe-text);font:inherit;font-size:14px;font-weight:500;white-space:nowrap;cursor:pointer}
+.pe-action:hover:not(:disabled){background:var(--pe-hover)}
+.pe-action.pe-enhance{min-height:34px;padding:0 12px;color:var(--pe-brand);font-size:13px}
+.pe-action.pe-primary{border-color:var(--pe-brand);background:var(--pe-brand);color:#fff;font-weight:600;box-shadow:0 4px 12px color-mix(in srgb,var(--pe-brand) 25%,transparent)}
+.pe-action.pe-primary:hover:not(:disabled){background:color-mix(in srgb,var(--pe-brand) 88%,#000);border-color:transparent}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--pe-brand);outline-offset:3px}
+.pe-status-line{display:flex;align-items:center;gap:10px;min-width:0}
+.pe-status{margin:0;min-width:0;min-height:20px;color:var(--pe-muted);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.pe-reconnect{flex:none;min-height:30px;padding:0 10px;font-size:12px}
+[hidden]{display:none!important}
+@media(max-width:900px){
+  .pe-workspace-body{grid-template-columns:minmax(0,1fr)}
+  .pe-persona-rail{margin:0 26px 18px}
+  .pe-level-guide{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:18px;row-gap:6px}
+  .pe-level-guide dt{grid-row:1;margin:0}
+  .pe-level-guide dd{grid-row:2;margin:0}
+  .pe-rail-note{margin-top:18px}
+}
+@media(max-width:620px){
+  body{padding:8px}
+  .pe-workspace{height:100%;border-radius:14px}
+  .pe-workspace-head{padding:16px 16px 6px;gap:12px}
+  .pe-workspace-title{font-size:18px}
+  .pe-workspace-sub{font-size:12px}
+  .pe-brand{width:38px;height:38px;border-radius:11px}
+  .pe-wordmark{display:none}
+  .pe-document{padding:8px 16px 16px}
+  .pe-persona-rail{margin:0 16px 16px;padding:14px}
+  .pe-output-controls{gap:10px}
+  .pe-mode-note{display:none}
+  .pe-section-heading{gap:8px;margin-top:20px}
+  .pe-section-heading label{font-size:14px}
+  .pe-original-card,.pe-preview-text{padding:14px;font-size:14px}
+  .pe-help{font-size:12.5px}
+  .pe-workspace-footer{padding:8px 16px 16px;gap:10px}
+  .pe-action{padding:0 14px}
+}
+@media(max-width:400px){
+  .pe-footer-actions{align-items:stretch}
+  .pe-actions{gap:8px}
+  .pe-actions.pe-right{width:100%;margin-left:0}
+  .pe-actions.pe-right .pe-action{flex:1}
+  .pe-level-guide{display:block}
+  .pe-level-guide dt{margin-top:16px}
+  .pe-level-guide dd{margin-top:4px}
+  .pe-status-line{align-items:flex-start;flex-wrap:wrap}
+}
 </style>
 </head>
 <body>
-<header><div class="mark" aria-hidden="true">✦</div><div><h1>Prompt Spark</h1><p>把想法整理成清晰的提示词</p></div></header>
-<label for="draft">原始草稿</label>
-<textarea id="draft" maxlength="24000" placeholder="在这里写下或粘贴想要强化的提示词……"></textarea>
-<div class="row"><label for="level" style="margin:0">详细度</label><select id="level"><option value="concise">简洁 · 轻度润色</option><option value="standard" selected>标准 · 清晰结构</option><option value="detailed">详细 · 边界与验收</option></select><span class="spacer"></span><button id="cancel" hidden disabled>取消强化</button><button id="enhance" class="primary" disabled>强化草稿</button></div>
-<p class="hint">强化在独立后台完成，结果直接显示在本面板，不向当前聊天发送请求。草稿中的任务只作为改写内容。</p>
-<section style="margin-top:24px"><label for="preview">强化预览 · 可直接编辑</label><textarea id="preview" maxlength="24000" placeholder="强化后在这里审阅、修改结果。"></textarea>
-<div class="row"><button id="refine" disabled>再次强化预览</button><span class="spacer"></span><button id="copy" disabled>复制</button><button id="insert" class="primary" disabled>放入输入框</button></div>
-<p class="hint" id="insertHint">放入输入框会追加预览文本，由你检查后手动发送。</p></section>
-<p id="status" class="status" role="status" aria-live="polite">正在连接桌面应用……</p>
-<button id="reconnect" hidden>重新检查</button>
+<main class="pe-workspace" aria-labelledby="workspace-title">
+  <header class="pe-workspace-head">
+    <span class="pe-brand" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2.5C13.2 8.4 15.6 10.8 21.5 12C15.6 13.2 13.2 15.6 12 21.5C10.8 15.6 8.4 13.2 2.5 12C8.4 10.8 10.8 8.4 12 2.5Z" fill="currentColor"/></svg></span>
+    <div class="pe-head-text"><h1 id="workspace-title" class="pe-workspace-title">提示词预览</h1><p class="pe-workspace-sub">把想法整理成清晰的提示词</p></div>
+    <span class="pe-wordmark">Prompt Spark</span>
+  </header>
+  <div class="pe-workspace-body">
+    <div class="pe-document">
+      <div class="pe-output-controls">
+        <label for="level">长短档</label>
+        <select id="level"><option value="concise">简洁</option><option value="standard" selected>标准</option><option value="detailed">详细</option></select>
+        <span class="pe-mode-note">独立强化 · 本面板内预览</span>
+      </div>
+      <p class="pe-help">保留原意，整理表达。可继续强化当前预览，确认后再放入输入框。</p>
+      <section aria-labelledby="draft-label">
+        <div class="pe-section-heading"><label id="draft-label" for="draft">原始草稿</label><button type="button" id="enhance" class="pe-action pe-enhance" disabled>强化草稿</button></div>
+        <textarea id="draft" class="pe-original-card" maxlength="24000" placeholder="在这里写下或粘贴想要强化的提示词……" spellcheck="false"></textarea>
+      </section>
+      <section aria-labelledby="preview-label">
+        <div class="pe-section-heading"><label id="preview-label" for="preview">强化预览 · 可直接编辑</label></div>
+        <textarea id="preview" class="pe-preview-text" maxlength="24000" placeholder="强化后在这里审阅、修改结果。" spellcheck="false" aria-describedby="insertHint"></textarea>
+        <p class="pe-help pe-editor-hint" id="insertHint">可直接编辑全文；放入输入框会追加预览，由你检查后手动发送。</p>
+      </section>
+      <details class="pe-details"><summary>使用与数据说明</summary>
+        <p class="pe-help">强化只改写文字，草稿中的任务作为改写内容。项目背景、参考资料和风格要求，请一并写入草稿。</p>
+        <p class="pe-help">强化使用 Codex 已配置的模型服务并消耗其用量，结果直接返回本面板。失败或取消后，已有文字仍会保留。</p>
+      </details>
+    </div>
+    <aside class="pe-persona-rail" aria-labelledby="guide-title">
+      <h2 id="guide-title" class="pe-rail-title">选择适合的长短档</h2>
+      <dl class="pe-level-guide">
+        <dt>简洁</dt><dd>保留原意、减少赘述，适合轻度润色。</dd>
+        <dt>标准</dt><dd>整理任务与要求，按需补充验收标准和约束。</dd>
+        <dt>详细</dt><dd>在已有信息基础上，进一步明确背景、边界与失败情况。</dd>
+      </dl>
+      <div class="pe-rail-note"><h2 class="pe-rail-title">先审阅，再使用</h2><p class="pe-help">强化结果可以继续编辑。点击“再次强化预览”，会以当前预览和所选档位继续整理。</p></div>
+    </aside>
+  </div>
+  <footer class="pe-workspace-footer">
+    <div class="pe-footer-actions">
+      <div class="pe-actions"><button type="button" id="refine" class="pe-action" disabled>再次强化预览</button><button type="button" id="cancel" class="pe-action" hidden disabled>取消强化</button></div>
+      <div class="pe-actions pe-right"><button type="button" id="copy" class="pe-action" disabled>复制</button><button type="button" id="insert" class="pe-action pe-primary" disabled>放入输入框</button></div>
+    </div>
+    <div class="pe-status-line"><p id="status" class="pe-status" role="status" aria-live="polite">正在连接桌面应用……</p><button type="button" id="reconnect" class="pe-action pe-reconnect" hidden>重新检查</button></div>
+  </footer>
+</main>
 <script>
 (() => {
   const byId = id => document.getElementById(id);
