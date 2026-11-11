@@ -32,7 +32,11 @@ if (!scenario) {
   app.setName = () => {};
   app.getPath = () => directory;
   app.requestSingleInstanceLock = () => scenario !== 'second-instance';
-  app.whenReady = async () => {};
+  let signalReady;
+  const ready = new Promise((resolve) => { signalReady = resolve; });
+  app.whenReady = () => ready;
+  let shown;
+  const shownPromise = new Promise((resolve) => { shown = resolve; });
   app.exit = () => finished();
   app.quit = () => {
     appQuitCount += 1;
@@ -60,7 +64,7 @@ if (!scenario) {
     getBounds() { return { x: this.bounds.x, y: this.bounds.y, width: this.bounds.width, height: this.bounds.height }; }
     getNormalBounds() { return this.getBounds(); }
     setMinimumSize() {}
-    show() { this.visible = true; }
+    show() { this.visible = true; shown(); }
     hide() { this.visible = false; }
     focus() { this.focused = true; }
     minimize() { this.minimized = true; }
@@ -94,6 +98,10 @@ if (!scenario) {
       assert.equal(windows.length, 0, 'second process never creates its own window');
       assert.equal(appQuitCount, 1);
     } else {
+      // Electron emits ready only after entry-module evaluation completes. This
+      // catches a top-level-await deadlock rather than resolving ready eagerly.
+      signalReady();
+      await shownPromise;
       const window = windows[0];
       assert.ok(window.visible);
       if (scenario === 'tray') {
