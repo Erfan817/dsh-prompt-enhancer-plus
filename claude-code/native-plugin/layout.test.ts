@@ -18,6 +18,7 @@ for (const surface of ['desktop', 'terminal'] as const) {
     const clock = mock.clock(on)
     on('prompt.read', () => ({ value: { text: '原始草稿', cursor: 4 } }))
     on('session.cwd', () => ({ value: '/project' }))
+    on('session.root', () => ({ value: '/project' }))
     on('env.get', () => ({ value: undefined }))
     on('fs.exists', () => ({ value: false }))
     on('session.model', () => ({ value: 'test' }))

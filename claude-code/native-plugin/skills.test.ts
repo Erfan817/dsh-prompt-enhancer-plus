@@ -25,6 +25,7 @@ test('manual local references, disabled flags, iteration and failure preservatio
   let requests = 0
   let failure = false
   on('session.cwd', () => ({ value: '/project' }))
+  on('session.root', () => ({ value: '/project' }))
   on('env.get', () => ({ value: undefined }))
   on('fs.exists', (_, e) => ({ value: e.path.replace(/\\/g, '/').endsWith(root) }))
   on('fs.stat', (_, e) => ({ value: { kind: e.path.endsWith('SKILL.md') ? 'file' : 'dir',

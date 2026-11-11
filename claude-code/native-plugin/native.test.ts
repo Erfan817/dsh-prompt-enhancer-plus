@@ -1,5 +1,5 @@
 import { test, expect, mock } from 'claude-code/testing'
-import type { On, ModelCompleteInput, ModelCompleteResult } from 'claude-code'
+import type { EngineInterface, On, ModelCompleteInput, ModelCompleteResult } from 'claude-code'
 
 const PLUGIN = 'prompt-spark-native'
 const usage = { input_tokens: 12, output_tokens: 20, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
@@ -14,7 +14,7 @@ const PANE = {
     placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
 } as const
 
-function host(on: On, respond?: (e: ModelCompleteInput) => Promise<ModelCompleteResult> | ModelCompleteResult) {
+function host(on: On, respond?: (e: ModelCompleteInput, $: EngineInterface) => Promise<ModelCompleteResult> | ModelCompleteResult) {
   const clock = mock.clock(on)
   const h = { clock, text: '帮我做导出 CSV，不改数据结构。', requests: [] as ModelCompleteInput[],
     fills: [] as string[], copied: '', toasts: [] as string[], failFill: false, submissions: 0, canPlace: true }
@@ -26,12 +26,13 @@ function host(on: On, respond?: (e: ModelCompleteInput) => Promise<ModelComplete
     return { isFilled: true }
   })
   on('session.cwd', () => ({ value: '/project' }))
+  on('session.root', () => ({ value: '/project' }))
   on('env.get', () => ({ value: undefined }))
   on('fs.exists', () => ({ value: false }))
   on('session.model', () => ({ value: 'test-session-model' }))
-  on('model.complete', async (_, e) => {
+  on('model.complete', async ($, e) => {
     h.requests.push(e)
-    return { value: respond ? await respond(e) : { isAnswered: true, text: 'Task: 导出 CSV。\nConstraints: 不改数据结构。', usage } }
+    return { value: respond ? await respond(e, $) : { isAnswered: true, text: 'Task: 导出 CSV。\nConstraints: 不改数据结构。', usage } }
   })
   on('ui.open', () => ({ value: h.canPlace ? { isPlaced: true } : { isPlaced: false, reason: 'no-surface' } }))
   on('ui.close', () => ({ value: undefined }))
@@ -161,8 +162,8 @@ test('cancel discards even a late successful response and permits another reques
 })
 
 test('closing preview cancels in-flight work', async ($, on) => {
-  const h = host(on, async () => {
-    await $.ui.close({ id: 'prompt-spark-preview' })
+  const h = host(on, async (_, engine) => {
+    await engine.ui.close({ id: 'prompt-spark-preview' })
     return { isAnswered: true, text: 'Task: 迟到的结果', usage }
   })
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
@@ -200,7 +201,7 @@ test('submitted drafts lose replacement authority even when their text is identi
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await band.press({ key: 'enhance' })
   await h.clock.advance(1)
-  await $.prompt.submit({ text: h.text })
+  await $.prompt.submit({ text: h.text, wait: false, origin: { kind: 'composer' } })
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await pane.find({ key: 'apply' })).toBeUndefined()
   expect(h.fills.length).toBe(0)

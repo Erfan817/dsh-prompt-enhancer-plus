@@ -20,6 +20,8 @@ for (const required of [
   'claude-code/native-plugin/hooks/prompt-core.js',
   'claude-code/native-plugin/hooks/brand.js',
   'claude-code/native-plugin/hooks/skills.ts',
+  'claude-code/native-plugin/hooks/project.ts',
+  'claude-code/native-plugin/project.test.ts',
   'claude-code/native-plugin/types/index.d.ts',
   '.agents/plugins/marketplace.json',
   'codex/build-plugin.mjs', 'codex/test-plugin.mjs', 'codex/test-desktop.mjs', 'codex/README.md',
