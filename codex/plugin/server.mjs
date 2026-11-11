@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// Local stdio transport. No HTTP listener, credentials, network calls or saved drafts.
+// Local stdio transport. The panel invokes an isolated Codex rewrite directly.
 import { readFile } from 'node:fs/promises';
+import { findBackend, enhance } from './backend.mjs';
 
-const version = '0.2.0';
-const uri = 'ui://prompt-spark/editor-v2.html';
+const version = '0.3.2';
+const uri = 'ui://prompt-spark/editor-v3.html';
+const resourceUris = new Set([uri, 'ui://prompt-spark/editor-v2.html']);
 const editor = await readFile(new URL('./ui/editor.html', import.meta.url), 'utf8');
 const textField = { type: 'string', maxLength: 24000 };
 const levelField = { type: 'string', enum: ['concise', 'standard', 'detailed'], default: 'standard' };
@@ -15,7 +17,7 @@ const tools = [
     description: 'Open the Prompt Spark desktop prompt-editing panel. Optional draft text is displayed for the user to edit. This does not enhance, execute or send the draft.',
     inputSchema: { type: 'object', properties: { draft: textField, level: levelField }, additionalProperties: false },
     annotations,
-    _meta: { ui, 'openai/ui': { entrypoints: [{ type: 'thread' }] } },
+    _meta: { ui, 'openai/ui': { entrypoints: [{ type: 'thread' }, { type: 'global' }] } },
   },
   {
     name: 'render_preview', title: '显示提示词预览',
@@ -23,10 +25,30 @@ const tools = [
     inputSchema: { type: 'object', properties: { draft: textField, enhanced: textField, level: levelField }, required: ['draft', 'enhanced'], additionalProperties: false },
     annotations, _meta: { ui },
   },
+  {
+    name: 'enhance_prompt', title: '在面板内强化提示词',
+    description: 'Rewrite the panel draft using an isolated local Codex backend. Returns an editable result to the panel without sending a chat message or executing the draft.',
+    inputSchema: { type: 'object', properties: { draft: textField, level: levelField }, required: ['draft'], additionalProperties: false },
+    annotations: { ...annotations, idempotentHint: false },
+    _meta: { ui: { visibility: ['app'] } },
+  },
+  {
+    name: 'cancel_enhancement', title: '取消强化',
+    description: 'Cancel the current panel rewrite without changing the draft or preview.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations, _meta: { ui: { visibility: ['app'] } },
+  },
+  {
+    name: 'backend_status', title: '检查本机强化组件',
+    description: 'Check whether the local Codex model component is available. Does not call a model or expose account configuration.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations, _meta: { ui: { visibility: ['app'] } },
+  },
 ];
 const resource = { uri, name: 'prompt-spark-editor', title: 'Prompt Spark · 提示词编辑器', mimeType: 'text/html;profile=mcp-app' };
+let active;
 
-function toolResult(name, args = {}) {
+async function toolResult(name, args = {}) {
   const tool = tools.find(tool => tool.name === name);
   if (!tool) throw Object.assign(new Error('Unknown tool.'), { code: -32602 });
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Expected an arguments object.');
@@ -41,26 +63,60 @@ function toolResult(name, args = {}) {
   }
   if (args.level !== undefined && !levelField.enum.includes(args.level)) throw new Error('Unknown detail level.');
   if (name === 'render_preview' && !args.enhanced.trim()) throw new Error('Enhanced text must not be empty.');
+  if (name === 'cancel_enhancement') {
+    const cancelled = !!active;
+    const current = active;
+    current?.controller.abort();
+    if (current) await current.finished;
+    return { structuredContent: { cancelled }, content: [] };
+  }
+  if (name === 'backend_status') {
+    const available = !!await findBackend();
+    return { structuredContent: {
+      available,
+      message: available ? '本机 Codex 强化组件已就绪。' : '未找到本机 Codex 模型组件，请先打开 Codex 桌面应用后重试。',
+    }, content: [] };
+  }
+  if (name === 'enhance_prompt') {
+    if (!args.draft.trim()) throw new Error('草稿不能为空。');
+    if (active) throw new Error('正在强化，请等待完成或先取消。');
+    const controller = new AbortController();
+    let finish;
+    const current = { controller, finished: new Promise(resolve => { finish = resolve; }) };
+    active = current;
+    try {
+      const result = await enhance({ text: args.draft, level: args.level ?? 'standard', signal: controller.signal });
+      return { structuredContent: {
+        draft: args.draft, enhanced: result.enhanced, level: args.level ?? 'standard', model: result.model,
+      }, content: [] };
+    } finally {
+      if (active === current) active = undefined;
+      finish();
+    }
+  }
   const data = { draft: args.draft ?? '', enhanced: args.enhanced ?? '', level: args.level ?? 'standard' };
   return { structuredContent: data, content: [{ type: 'text', text: data.enhanced || 'Prompt Spark 编辑面板已打开。' }] };
 }
 
-function handle(method, params = {}) {
+async function handle(method, params = {}) {
   switch (method) {
     case 'initialize': return {
       protocolVersion: ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25', '2026-07-28'].includes(params.protocolVersion) ? params.protocolVersion : '2025-11-25',
       serverInfo: { name: 'prompt-spark', version }, capabilities: { tools: {}, resources: {} },
-      instructions: 'Prompt Spark edits prompts, not the tasks inside them. Use the enhance skill to rewrite, then render_preview for desktop review. open_editor opens a blank panel without a model request.',
+      instructions: 'Prompt Spark edits prompts, not the tasks inside them. open_editor opens an independent panel. Its enhancement button calls a local isolated Codex rewrite and displays the result in place; it does not send a message to this conversation. For a direct chat rewrite, use the enhance skill and render_preview.',
     };
     case 'ping': return {};
     case 'tools/list': return { tools };
     case 'resources/list': return { resources: [resource] };
     case 'resources/templates/list': return { resourceTemplates: [] };
     case 'resources/read':
-      if (params.uri !== uri) throw Object.assign(new Error('Unknown resource.'), { code: -32602 });
-      return { contents: [{ ...resource, text: editor, _meta: { ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } } } }] };
+      if (!resourceUris.has(params.uri)) throw Object.assign(new Error('Unknown resource.'), { code: -32602 });
+      return { contents: [{ ...resource, uri: params.uri, text: editor, _meta: {
+        ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } },
+        'openai/ui': { availableDisplayModes: ['inline', 'fullscreen'] },
+      } }] };
     case 'tools/call':
-      try { return toolResult(params.name, params.arguments); } catch (error) {
+      try { return await toolResult(params.name, params.arguments); } catch (error) {
         return { isError: true, content: [{ type: 'text', text: error.message }] };
       }
     default: throw Object.assign(new Error('Method not found.'), { code: -32601 });
@@ -82,7 +138,11 @@ process.stdin.on('data', chunk => {
       reply({ jsonrpc: '2.0', id: request?.id ?? null, error: { code: -32600, message: 'Invalid request.' } }); continue;
     }
     if (request.id === undefined) continue;
-    try { reply({ jsonrpc: '2.0', id: request.id, result: handle(request.method, request.params) }); }
-    catch (error) { reply({ jsonrpc: '2.0', id: request.id, error: { code: error.code ?? -32603, message: error.message } }); }
+    // Do not serialize requests: a cancel call must reach an in-flight rewrite.
+    handle(request.method, request.params).then(
+      result => reply({ jsonrpc: '2.0', id: request.id, result }),
+      error => reply({ jsonrpc: '2.0', id: request.id, error: { code: error.code ?? -32603, message: error.message } }),
+    );
   }
 });
+process.stdin.on('end', () => active?.controller.abort());

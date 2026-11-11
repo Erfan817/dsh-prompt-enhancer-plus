@@ -17,6 +17,7 @@ const files = new Map([
   ['.mcp.json', JSON.stringify({ mcpServers: JSON.parse(await readFile(path.join(plugin, 'mcp.json'), 'utf8')).mcpServers }, null, 2) + '\n'],
   ['assets/icon.svg', await readFile(path.join(root, 'icon.svg'), 'utf8')],
   ['LICENSE', await readFile(path.join(root, 'LICENSE'), 'utf8')],
+  ['prompt-core.js', await readFile(path.join(root, 'prompt-core.js'), 'utf8')],
 ]);
 for (const level of ['concise', 'standard', 'detailed']) {
   files.set(`skills/enhance/references/${level}.md`,

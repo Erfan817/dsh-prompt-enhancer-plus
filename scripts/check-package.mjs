@@ -24,10 +24,10 @@ for (const required of [
   'claude-code/native-plugin/project.test.ts',
   'claude-code/native-plugin/types/index.d.ts',
   '.agents/plugins/marketplace.json',
-  'codex/build-plugin.mjs', 'codex/test-plugin.mjs', 'codex/test-desktop.mjs', 'codex/README.md',
+  'codex/build-plugin.mjs', 'codex/test-plugin.mjs', 'codex/test-desktop.mjs', 'codex/test-backend.mjs', 'codex/README.md',
   'codex/plugin/plugin.json', 'codex/plugin/.codex-plugin/plugin.json',
   'codex/plugin/mcp.json', 'codex/plugin/.mcp.json',
-  'codex/plugin/server.mjs', 'codex/plugin/ui/editor.html',
+  'codex/plugin/server.mjs', 'codex/plugin/backend.mjs', 'codex/plugin/prompt-core.js', 'codex/plugin/ui/editor.html',
   'codex/test-overlay.mjs', 'codex/overlay/Overlay.cs', 'codex/overlay/enhance.mjs',
   'codex/overlay/launch.ps1', 'codex/overlay/run.ps1', 'codex/overlay/stop.ps1',
   'codex/overlay/start.vbs', 'codex/overlay/README.md',
@@ -43,5 +43,6 @@ for (const name of names) {
   assert.ok(!/(^|\/)\.env(?:\.|$)|(^|\/)session\.json$|\.log$/i.test(name), `Unexpected local configuration/log: ${name}`);
   assert.ok(!/(^|\/)(\.host-check|\.test-tmp)(\/|$)/.test(name), `Unexpected local test state: ${name}`);
   assert.ok(!name.startsWith('codex/overlay/runtime/'), `Unexpected overlay runtime state: ${name}`);
+  assert.ok(!name.startsWith('codex/plugin/runtime/'), `Unexpected panel runtime state: ${name}`);
 }
 console.log(`Package verified: ${names.size} files; ${archive.size} packed bytes.`);

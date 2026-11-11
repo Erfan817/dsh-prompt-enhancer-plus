@@ -4,3 +4,4 @@ node_modules/
 codex/.host-check/
 codex/.test-tmp/
 codex/overlay/runtime/
+codex/plugin/runtime/

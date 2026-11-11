@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "prompt-spark",
-  "version": "0.2.0",
-  "description": "A Codex desktop prompt editor with three detail levels, editable previews and explicit composer insertion.",
+  "version": "0.3.2",
+  "description": "An independent Codex prompt panel with isolated background enhancement, editable previews and explicit composer insertion.",
   "author": { "name": "Erfan817" },
   "homepage": "https://github.com/Erfan817/prompt-spark",
   "repository": "https://github.com/Erfan817/prompt-spark",
@@ -12,8 +12,8 @@
     "com.openai": {
       "interface": {
         "displayName": "Prompt Spark · 提示词火花",
-        "shortDescription": "桌面提示词编辑面板：强化、审阅、放入输入框",
-        "longDescription": "在 Codex 桌面版打开提示词面板，选择简洁、标准或详细档，通过当前对话模型生成可编辑预览。确认后可追加到输入框，不发送结果。",
+        "shortDescription": "独立提示词面板：后台强化、审阅、放入输入框",
+        "longDescription": "从侧边入口打开独立提示词面板，选择简洁、标准或详细档，通过本机 Codex 后端在面板内生成可编辑预览。强化请求不发送到当前聊天，确认后可放入输入框。",
         "developerName": "Erfan817",
         "category": "Productivity",
         "capabilities": ["Interactive", "Read"],
@@ -24,8 +24,7 @@
         "defaultPrompt": [
           "打开 Prompt Spark 提示词编辑面板",
           "用 Prompt Spark 标准档强化下面的草稿，只返回改写结果：",
-          "用 Prompt Spark 简洁档润色下面的提示词，保留全部事实：",
-          "用 Prompt Spark 详细档强化下面的提示词，结合我指定的项目资料："
+          "用 Prompt Spark 简洁档润色下面的提示词，保留全部事实："
         ]
       }
     }

@@ -52,7 +52,7 @@
 | **先审阅，再使用**<br>*Review before use* | DSH 支持全文预览和编辑、最近五条记录与十秒撤销；由你决定复制或替换草稿。<br>*DSH provides an editable preview, five recent entries, and ten-second undo. You decide whether to copy or replace.* |
 | **可复用人格与偏好**<br>*Reusable personas & preferences* | 保存产品、工程、写作、极简等改写方向；DSH 还能从手动修改前后的差异中提议可复用偏好，审阅后才保存。<br>*Save rewriting directions and, in DSH, review preferences inferred from your manual edits before anything is stored.* |
 | **项目感知（DSH / Claude Code 原生版）**<br>*Project-aware (DSH / native Claude Code)* | 可将 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md` 和 `package.json` 作为参考数据，让改写更贴合当前项目。Claude Code 原生版提供独立开关、项目根目录和文件读取状态。<br>*Use project instruction and metadata files as reference data. Native Claude Code also shows a separate toggle, project root and per-file status.* |
-| **一个核心，多个入口**<br>*One core, many entry points* | DSH 和 Claude Code 原生插件复用强化核心及各自宿主的模型接口；Codex 插件把共享规则交给当前对话模型；旧适配器连接本机服务，规则集中维护。<br>*DSH and native Claude Code use shared rules with host model clients; the Codex plugin hands shared rules to the conversation model; legacy adapters use the local service.* |
+| **一个核心，多个入口**<br>*One core, many entry points* | DSH 和 Claude Code 原生插件复用强化核心及各自宿主的模型接口；Codex 独立面板使用临时 Codex 后端会话；旧适配器连接本机服务，规则集中维护。<br>*DSH and native Claude Code use shared rules with host model clients; the Codex panel uses an ephemeral Codex backend session; legacy adapters use the local service.* |
 
 ## 看看输出长什么样 · Example
 
@@ -106,9 +106,9 @@ DSH 强化默认使用当前会话选择的 provider/model，不需要启动桌�
 
 ### 非 DSH 入口：启动并配置本地服务 · Start and configure the companion
 
-旧 VS Code/Cursor、CLI、Windows 热键和 `/enhance` 命令需要本地服务；DSH 和新的 Claude Code 原生插件不需要。在仓库根目录运行，并保持终端开启：
+旧 VS Code/Cursor、CLI、Windows 热键和 `/enhance` 命令需要本地服务；DSH、Claude Code 原生插件和 Codex 独立面板不需要。在仓库根目录运行，并保持终端开启：
 
-*Every non-DSH adapter needs the local companion. Run this from the repository root and keep the terminal open:*
+*Legacy VS Code/Cursor, CLI, hotkey and `/enhance` adapters need the local companion. DSH, native Claude Code and the Codex independent panel do not. Run this from the repository root and keep the terminal open:*
 
 ```sh
 npm run desktop
@@ -169,15 +169,15 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 
 *The legacy command still requires the companion. Classic UserPromptSubmit hooks append context; the new native plugin uses a separate function-hooks API for UI and draft access.*
 
-### Codex：桌面编辑面板 · Desktop editor plugin
+### Codex：独立提示词面板 · Independent prompt panel
 
-需要输入框附近的按钮时，使用独立的 [Windows 悬浮组件](codex/overlay/README.md)：双击 `codex/overlay/start.vbs`，在 Codex 输入框左端上方显示 **✦ 强化 / 预览**，支持草稿读取、审阅后替换和撤销；退出时右键按钮。它与下面的插件面板是两个入口。
+[`codex/plugin`](codex/README.md) 提供原生侧边面板：草稿编辑、三档强化、可编辑预览、再次强化、取消、复制和放入输入框。强化通过本机 Codex 后端的独立临时会话完成，结果直接返回同一面板，不向当前聊天发送请求。需要 Node.js 22+ 和已配置可用模型的 Codex；Windows 自动寻找桌面组件，无需另装 CLI、启动桌面伴侣或额外填写 API Key。
 
-[`codex/plugin`](codex/README.md) 提供桌面插件：草稿编辑、三档选择、强化预览、再次强化、复制和放入输入框。使用当前对话模型，桌面应用自动启动附带的本地 MCP 进程；需要 Node.js 22+，无需安装 Codex CLI、手动启动桌面伴侣或额外 API Key。
+在 Codex 中打开本仓库项目，按本地插件流程完整重启并安装 **Prompt Spark**。随后点击对话右上角**新建标签页 → 更多工具 → 打开 Prompt Spark**，无需先发聊天消息。独立后台使用 Codex 配置的默认模型，不自动跟随当前聊天临时选中的型号，也不自动读取聊天历史、项目文件或 Skill。插件 `0.3.2` 已在桌面版 `26.1106.6628.0` 实测完成原生入口、真实模型强化、同面板结果和点击插入输入框；结果未发送，测试后已恢复输入框。
 
-在 Codex 桌面应用中打开本仓库项目，完整重启应用，在 **Plugins / 插件 → Prompt Spark 本地来源** 安装。新建对话后选择插件，输入“打开 Prompt Spark 提示词编辑面板”。点击强化会发送一次改写请求；“放入输入框”只追加结果，不发送、不覆盖已有草稿。详细步骤及验证边界见 [Codex 桌面指南](codex/README.md)。
+“放入输入框”在宿主支持时追加结果，不发送、不读取或替换已有草稿；不支持时可复制。另有可选的 [Windows 悬浮组件](codex/overlay/README.md) 提供系统级输入框按钮和确认替换，它不属于原生面板。运行环境、数据边界和验证范围见 [Codex 指南](codex/README.md)。
 
-*Install from the desktop plugin directory and ask to open the editor. The panel offers editable previews and explicit composer insertion without sending. Enhancement uses the current conversation model; a bundled local MCP process provides the UI. Unsent composer drafts cannot be read or replaced.*
+*Install the local plugin, then use the conversation's top-right **New tab → More tools → Open Prompt Spark** entry. The native side panel enhances drafts through an independent ephemeral Codex backend session and shows results in place, without posting to the current chat. It uses the configured default model rather than automatically following the chat's temporary model selection; chat history, project files and Skills are not collected. Windows discovers the desktop engine automatically; Node.js 22+ is required. Existing model-service usage applies, with no companion or duplicate API Key setup. Plugin `0.3.2` was verified on desktop `26.1106.6628.0`: the native entry, real model enhancement, in-panel results and explicit composer insertion all worked. The result was not sent, and the composer was restored after testing. Copy remains a fallback; unsent drafts cannot be read or replaced. See the [Codex guide](codex/README.md) for runtime configuration and verification limits.*
 
 ### 任意 Windows 应用：全局热键 · Global hotkey for Windows apps
 
@@ -218,9 +218,9 @@ flowchart LR
     R --> U[Review, edit & use<br/>审阅、编辑、使用]
 ```
 
-DSH 和 Claude Code 原生插件直接复用强化规则，由各自宿主执行模型调用。Codex 桌面插件把共享规则作为改写参考交给当前对话模型完成强化，生成的规则副本由 `npm run codex:build` 产出、`npm run codex:validate` 检查。旧面板、CLI、热键及 `/enhance` 适配器仍调用本机服务。Claude Code 插件中的规则副本由 `npm run claude:build` 同步，`--check` 检查漂移。
+DSH 和 Claude Code 原生插件直接复用强化规则，由各自宿主执行模型调用。Codex 独立面板把共享规则交给本机 Codex 后端的临时会话完成强化，结果返回面板；直接在聊天中使用 Skill 时才由聊天模型改写。Codex 规则副本由 `npm run codex:build` 产出、`npm run codex:validate` 检查。旧面板、CLI、热键及 `/enhance` 适配器仍调用本机服务。Claude Code 插件中的规则副本由 `npm run claude:build` 同步，`--check` 检查漂移。
 
-*DSH and the native Claude Code plugin use host model clients and shared rules. The Codex desktop plugin hands the shared rules to the current conversation model as rewrite references. Legacy adapters still use the loopback service. The native plugin's bundled rules are synchronized by the build script.*
+*DSH and the native Claude Code plugin use host model clients and shared rules. The Codex independent panel uses a temporary local Codex backend session and returns results to the panel; direct chat Skill requests still use the chat model. Legacy adapters use the loopback service. Build scripts synchronize bundled rules.*
 
 ## 进一步了解 · Advanced details
 
@@ -343,7 +343,7 @@ POST /api/health    → { ok: true, value: { ready: true, version } }
 | **VS Code** | 底部面板、选中文本命令、`Ctrl+Alt+E` / `Cmd+Alt+E`<br>*Bottom panel, selection command, keyboard shortcut* | ➖ |
 | **Cursor** | 与 VS Code 共用同一个 VSIX<br>*Uses the same VSIX as VS Code* | ➖ |
 | **Claude Code** | 原生 function hooks 插件：输入区上方按钮、预览与回填；桌面版与终端均可用；旧命令可选<br>*Native plugin on compatible builds, desktop and terminal; legacy command optional* | ✅ 输入区上方，需兼容构建 |
-| **Codex 桌面版** | 内嵌编辑面板、三档强化、预览和追加到输入框<br>*Desktop editor panel with preview and explicit composer insertion* | ➖ 面板按钮 |
+| **Codex 桌面版** | 独立侧边面板、三档后台强化、预览和追加到输入框<br>*Native side panel with independent enhancement, preview and explicit composer insertion* | ➖ 面板按钮 |
 | **其他 Windows 应用 · Other Windows apps** | 全局热键与剪贴板<br>*Global hotkey and clipboard* | ➖ |
 | **脚本与终端 · Scripts & terminals** | CLI 或本机 HTTP API<br>*CLI or local HTTP API* | ➖ |
 
@@ -382,13 +382,13 @@ npm run desktop:smoke
 npm pack --dry-run
 ```
 
-`npm test` 运行十四套测试，不需要 Electron，也不调用真实模型，覆盖核心规则、DSH Host/Client、人格与偏好、项目上下文、本机 API 与安全、桌面 UI、VS Code 客户端、CLI，以及 Codex 插件包、共享规则、MCP 传输、模拟宿主面板交互和 Windows 悬浮组件状态。
+`npm test` 不需要 Electron，也不调用真实模型，覆盖核心规则、DSH Host/Client、人格与偏好、项目上下文、本机 API 与安全、桌面 UI、VS Code 客户端、CLI，以及 Codex 插件包、共享规则、MCP 传输、模拟宿主面板交互、独立后端和 Windows 悬浮组件状态。
 
-*`npm test` runs fourteen suites without Electron or real model calls. Coverage includes core rules, DSH Host/Client, personas and preferences, project context, local API security, desktop UI logic, the VS Code client, the CLI, plus the Codex plugin package, shared rules, MCP transport, simulated host panel interactions, and Windows overlay state.*
+*`npm test` runs without Electron or real model calls. Coverage includes core rules, DSH Host/Client, personas and preferences, project context, local API security, desktop UI logic, the VS Code client, the CLI, plus the Codex plugin package, shared rules, MCP transport, simulated host panel interactions, the independent backend, and Windows overlay state.*
 
-当前工作副本尚未完成真实 VS Code/Cursor 窗口、实际全局热键、Claude Code 命令执行或 Codex 桌面应用内实际点击与真实模型强化的端到端验证；Codex 悬浮组件目前只通过模拟宿主 bridge 在浏览器中验证过界面与撤销保护。版本变更见 [1.7.0 发布说明](docs/release-1.7.0.md)。
+当前工作副本尚未完成真实 VS Code/Cursor 窗口、实际全局热键或 Claude Code 命令执行的端到端验证。Codex 原生面板已在真实桌面窗口通过官方入口打开、点击强化并在同面板收到真实模型结果，再点击“放入输入框”成功插入且未发送，测试后恢复输入框。这是独立面板的验证，不代表悬浮组件或其他入口已验收。详细验证范围见 [Codex 指南](codex/README.md)，版本变更见 [1.7.0 发布说明](docs/release-1.7.0.md)。
 
-*This working copy has not completed visual or end-to-end verification in real VS Code/Cursor windows, with a physically triggered global hotkey, through Claude Code command execution, or with real clicks and real model enhancement inside the Codex desktop app; the Codex overlay has only been verified in a browser against a simulated host bridge. See the [1.7.0 release notes](docs/release-1.7.0.md) for version changes.*
+*End-to-end verification remains incomplete for real VS Code/Cursor windows, physically triggered global hotkeys and Claude Code command execution. The native Codex panel was opened through the real desktop entry, returned a real model result in place after clicking Enhance, and inserted the result into the composer through the panel button without sending. The composer was restored after testing. That verification applies to the native panel, not the overlay or other adapters. See the [Codex guide](codex/README.md) for exact coverage and the [1.7.0 release notes](docs/release-1.7.0.md) for version changes.*
 
 ## 许可证 · License
 
