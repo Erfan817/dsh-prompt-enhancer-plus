@@ -5,9 +5,11 @@ const { existsSync, readFileSync } = require('node:fs');
 const electronDirectory = path.dirname(require.resolve('electron/package.json'));
 const pathFile = path.join(electronDirectory, 'path.txt');
 const executable = existsSync(pathFile) ? readFileSync(pathFile, 'utf8').trim() : process.platform === 'win32' ? 'electron.exe' : 'electron';
-const electronPath = path.join(process.env.ELECTRON_OVERRIDE_DIST_PATH || path.join(electronDirectory, 'dist'), executable);
-if (!existsSync(electronPath)) {
-  console.error('Electron 运行文件缺失。请先完成桌面依赖安装；启动器不会自动下载。');
+let electronPath;
+try {
+  electronPath = require('./launch-runtime.cjs').resolveRuntime(process.env.ELECTRON_OVERRIDE_DIST_PATH || path.join(electronDirectory, 'dist'), executable);
+} catch (error) {
+  console.error(error.message);
   process.exit(1);
 }
 const environment = { ...process.env };
