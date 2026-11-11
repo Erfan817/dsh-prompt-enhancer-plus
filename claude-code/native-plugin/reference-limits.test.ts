@@ -12,6 +12,7 @@ test('references honor total budgets and never load resource scripts', async ($,
   let system = ''
   let reads = 0
   on('session.cwd', () => ({ value: '/project' }))
+  on('session.root', () => ({ value: '/project' }))
   on('env.get', () => ({ value: undefined }))
   on('fs.exists', (_, e) => ({ value: e.path.replace(/\\/g, '/').endsWith(root) }))
   on('fs.stat', (_, e) => ({ value: { kind: e.path.endsWith('SKILL.md') ? 'file' : 'dir', size: 30000, mtimeMs: 0, isLink: false, realPath: e.path } }))

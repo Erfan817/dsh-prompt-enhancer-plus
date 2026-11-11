@@ -4,14 +4,16 @@ import type { Level, Preview } from '../types'
 import { enhancementSystem, inputFor, normalizeEnhancedText } from './prompt-core.js'
 import { BRAND_ICON } from './brand.js'
 import { discover, loadReferences, matchSkills } from './skills'
+import { loadProject, projectRoot } from './project'
 
 const PANE = 'prompt-spark-preview'
 const initial: Preview = {
   phase: 'idle', level: 'standard', original: '', enhanced: '', error: '',
-  stale: false, sourceEpoch: 0, undo: null, showOriginal: false,
+  stale: false, sourceEpoch: 0, sourceRoot: '', undo: null, showOriginal: false,
+  useProject: true, showProject: false, projectRoot: '', projectReport: null,
   useSkills: true, showSkills: false, skillsLoading: false, catalog: null, skillNames: null, usedSkills: [], skillWarnings: [],
 }
-const preview = atom({ plugin: 'prompt-spark-native', key: 'preview' } as const, initial, { shape: 'preview-3' })
+const preview = atom({ plugin: 'prompt-spark-native', key: 'preview' } as const, initial, { shape: 'preview-4' })
 const levels = [
   { value: 'concise', label: '简洁' },
   { value: 'standard', label: '标准' },
@@ -24,26 +26,33 @@ let scan: AbortController | undefined
 let epoch = 0
 let working = false
 let applying = false
-let fillGuard: { text: string; epoch: number } | undefined
+let fillGuard: { text: string; epoch: number; root: string } | undefined
 
+const syncRoot = async ($: EngineInterface) => {
+  const root = await projectRoot($)
+  await update($, preview, (s): Preview => s.projectRoot === root ? s : ({ ...s, projectRoot: root,
+    projectReport: null, catalog: null, stale: !!s.original || s.stale, undo: null }))
+  return root
+}
 const open = async ($: EngineInterface) => {
   const result = await $.ui.open({ id: PANE, title: 'Prompt Spark · 提示词预览', focus: true, closeOnEscape: true })
   if (!result.isPlaced) $.ui.toast('当前界面无法显示预览，请在支持原生插件的桌面版或终端中使用。')
+  else await syncRoot($)
   return result.isPlaced
 }
 const error = async ($: EngineInterface, message: string) => {
-  await update($, preview, s => ({ ...s, phase: s.enhanced ? 'preview' : 'error', error: message }))
+  await update($, preview, (s): Preview => ({ ...s, phase: s.enhanced ? 'preview' : 'error', error: message }))
 }
 const cancel = async ($: EngineInterface) => {
   scan?.abort(); scan = undefined
   const controller = active
   active = undefined
   controller?.abort()
-  await update($, preview, s => ({ ...s, phase: s.enhanced ? 'preview' : 'idle', error: '', skillsLoading: false }))
+  await update($, preview, (s): Preview => ({ ...s, phase: s.enhanced ? 'preview' : 'idle', error: '', skillsLoading: false }))
 }
 const observe = async ($: EngineInterface) => {
   epoch += 1
-  await update($, preview, s => ({ ...s,
+  await update($, preview, (s): Preview => ({ ...s,
     stale: s.original ? true : s.stale,
     undo: null,
   }))
@@ -57,11 +66,11 @@ const refreshSkills = ($: EngineInterface) => {
 const scanSkills = async ($: EngineInterface, controller: AbortController) => {
   if (scan !== controller) return
   try {
-    await update($, preview, s => ({ ...s, skillsLoading: true }))
+    await update($, preview, (s): Preview => ({ ...s, skillsLoading: true }))
     const catalog = await discover($, controller.signal)
-    if (scan === controller) await update($, preview, s => ({ ...s, catalog, skillsLoading: false }))
+    if (scan === controller) await update($, preview, (s): Preview => ({ ...s, catalog, skillsLoading: false }))
   } catch {
-    if (scan === controller) await update($, preview, s => ({ ...s, skillsLoading: false,
+    if (scan === controller) await update($, preview, (s): Preview => ({ ...s, skillsLoading: false,
       catalog: { status: 'unavailable', entries: [], diagnostics: [] } }))
   } finally { if (scan === controller) scan = undefined }
 }
@@ -85,36 +94,48 @@ const generate = async ($: EngineInterface, controller: AbortController, fromPre
   try {
     const sourceEpoch = epoch
     const box = await $.prompt.read()
+    const root = await syncRoot($)
     const previous = await read($, preview)
     const text = fromPreview ? previous.enhanced : box.text
     if (!text.trim()) { $.ui.toast('先写下需要强化的内容。'); return }
     if (text.length > 12000) { $.ui.toast('内容超过 12000 字符，请缩短后重试；不会截断后发送。'); return }
+    if (fromPreview && previous.sourceRoot !== root) { await error($, '项目已改变，请重新强化当前草稿。'); return }
     const { level } = previous
     if (active !== controller) return
-    await update($, preview, s => ({ ...s, phase: 'busy', error: '', undo: null,
-      ...(fromPreview ? {} : { original: box.text, enhanced: '', stale: false, sourceEpoch }),
-      usedSkills: [], skillWarnings: [] }))
+    await update($, preview, (s): Preview => ({ ...s, phase: 'busy', error: '', undo: null,
+      ...(fromPreview ? {} : { original: box.text, enhanced: '', stale: false, sourceEpoch, sourceRoot: root }),
+      projectReport: null, usedSkills: [], skillWarnings: [] }))
+    const project = previous.useProject ? await loadProject($, root, controller.signal) : null
+    if (active !== controller) return
     let references = { context: '', used: [] as string[], warnings: [] as string[] }
     if (previous.useSkills) {
       const catalog = previous.catalog ?? await discover($, controller.signal).catch(() => ({
         status: 'unavailable' as const, entries: [], diagnostics: [],
       }))
       if (active !== controller) return
-      await update($, preview, s => ({ ...s, catalog }))
+      await update($, preview, (s): Preview => ({ ...s, catalog }))
       references = await loadReferences($, catalog.entries,
         previous.skillNames ?? matchSkills(catalog.entries, text), controller.signal)
       if (catalog.status !== 'ready') references.warnings.push('Skill 目录仅部分可用或扫描失败，已使用可读取的参考。')
     }
     if (active !== controller) return
+    if (await projectRoot($) !== root) { await error($, '项目在读取期间已改变，本次未发送，请重新强化。'); return }
+    if (active !== controller) return
+    await update($, preview, (s): Preview => ({ ...s, projectReport: project?.report ?? null }))
     const model = await $.session.model()
+    if (active !== controller) return
+    if (await projectRoot($) !== root) { await error($, '项目在读取期间已改变，本次未发送，请重新强化。'); return }
+    if (active !== controller) return
     const result = await $.model.complete({
       model,
-      system: enhancementSystem({ skillContext: references.context }, 'general', undefined, level),
+      system: enhancementSystem({ projectContext: project?.context ?? '', skillContext: references.context }, 'general', undefined, level),
       prompt: inputFor(text),
       maxTokens: 6000,
       effort: 'low',
       timeoutMs: 60000,
     }, { signal: controller.signal })
+    if (active !== controller) return
+    if (await projectRoot($) !== root) { await error($, '项目在强化期间已改变，结果已丢弃，请重新强化。'); return }
     if (active !== controller) return
     if (!result.isAnswered) {
       const message = result.reason === 'api-error'
@@ -126,7 +147,7 @@ const generate = async ($: EngineInterface, controller: AbortController, fromPre
     }
     const enhanced = normalizeEnhancedText(result.text, { original: text })
     if (!enhanced) { await error($, '模型返回了空结果，草稿未改动。'); return }
-    await update($, preview, s => ({ ...s, phase: 'preview', enhanced,
+    await update($, preview, (s): Preview => ({ ...s, phase: 'preview', enhanced,
       stale: s.stale || epoch !== (fromPreview ? previous.sourceEpoch : sourceEpoch), error: '',
       usedSkills: references.used, skillWarnings: references.warnings }))
   } catch {
@@ -135,12 +156,12 @@ const generate = async ($: EngineInterface, controller: AbortController, fromPre
     if (active === controller) active = undefined
   }
 }
-const fill = async ($: EngineInterface, text: string, expected: string, expectedEpoch: number) => {
-  fillGuard = { text: expected, epoch: expectedEpoch }
+const fill = async ($: EngineInterface, text: string, expected: string, expectedEpoch: number, root: string) => {
+  fillGuard = { text: expected, epoch: expectedEpoch, root }
   try {
     const result = await $.prompt.fill({ text, mode: 'replace' })
     if (!result.isFilled) {
-      $.ui.toast('未替换：输入框已改变、正在显示对话框，或当前界面不支持回填。可复制预览。')
+      $.ui.toast('未替换：输入框或项目已改变、正在显示对话框，或当前界面不支持回填。可复制预览。')
       return false
     }
     if (result.text !== text) {
@@ -157,13 +178,13 @@ const apply = async ($: EngineInterface) => {
     const s = await read($, preview)
     if (s.phase !== 'preview' || !s.enhanced.trim()) return
     const box = await $.prompt.read()
-    if (s.stale || epoch !== s.sourceEpoch || box.text !== s.original) {
-      $.ui.toast('草稿在生成后已改变，不会覆盖新内容。请复制预览或重新强化。')
+    if (s.stale || epoch !== s.sourceEpoch || box.text !== s.original || await projectRoot($) !== s.sourceRoot) {
+      $.ui.toast('草稿或项目在生成后已改变，不会覆盖新内容。请复制预览或重新强化。')
       return
     }
-    if (await fill($, s.enhanced, s.original, s.sourceEpoch)) {
+    if (await fill($, s.enhanced, s.original, s.sourceEpoch, s.sourceRoot)) {
       await update($, preview, current => ({ ...current, stale: true,
-        undo: { original: s.original, applied: s.enhanced, epoch } }))
+        undo: { original: s.original, applied: s.enhanced, epoch, root: s.sourceRoot } }))
       $.ui.toast('已替换草稿，尚未发送。可以撤销。')
     }
   } finally { applying = false }
@@ -175,13 +196,13 @@ const undo = async ($: EngineInterface) => {
     const { undo: saved } = await read($, preview)
     if (!saved) return
     const box = await $.prompt.read()
-    if (epoch !== saved.epoch || box.text !== saved.applied) {
-      $.ui.toast('输入框已改变，不能撤销覆盖你的新内容。')
-      await update($, preview, s => ({ ...s, undo: null }))
+    if (epoch !== saved.epoch || box.text !== saved.applied || await projectRoot($) !== saved.root) {
+      $.ui.toast('输入框或项目已改变，不能撤销覆盖你的新内容。')
+      await update($, preview, (s): Preview => ({ ...s, undo: null }))
       return
     }
-    if (await fill($, saved.original, saved.applied, saved.epoch)) {
-      await update($, preview, s => ({ ...s, undo: null, stale: true }))
+    if (await fill($, saved.original, saved.applied, saved.epoch, saved.root)) {
+      await update($, preview, (s): Preview => ({ ...s, undo: null, stale: true }))
       $.ui.toast('已恢复原草稿，尚未发送。')
     }
   } finally { applying = false }
@@ -196,15 +217,23 @@ const copy = async ($: EngineInterface, surface: RenderSurface) => {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     // A reload aborts the worker's pending call, but session state survives.
-    await update($, preview, s => ({ ...s, phase: s.phase === 'busy' ? 'error' : s.phase,
+    await update($, preview, (s): Preview => ({ ...s, phase: s.phase === 'busy' ? 'error' : s.phase,
       error: s.phase === 'busy' ? '插件已重新加载，请重新强化。' : s.error,
       stale: !!s.original, undo: null }))
+    await syncRoot($)
     await $.command.register({ name: 'prompt-spark', description: '打开提示词强化预览；不发送草稿' })
     return next(e)
   })
+  on('classic.CwdChanged', async ($, e, next) => {
+    const result = await next(e)
+    await cancel($)
+    await observe($)
+    await syncRoot($)
+    return result
+  })
   on('command.run', { command: 'prompt-spark' }, async $ => {
     await open($)
-    return { text: '已打开 Prompt Spark。点击「强化当前草稿」后才会调用当前模型。' }
+    return { text: '已打开 Prompt Spark。点击「强化当前草稿」后才会读取启用的参考并调用当前模型。' }
   })
   on('prompt.edit', async ($, e, next) => {
     const result = await next(e)
@@ -221,7 +250,7 @@ export const register: Register = on => {
     const guard = fillGuard
     if (guard) {
       const box = await $.prompt.read()
-      if (epoch !== guard.epoch || box.text !== guard.text || working) return { isFilled: false }
+      if (epoch !== guard.epoch || box.text !== guard.text || working || await projectRoot($) !== guard.root) return { isFilled: false }
     }
     return next(e)
   }).catch(() => ({ isFilled: false }))
@@ -295,13 +324,32 @@ export const register: Register = on => {
             onSubmit={value => update($, preview, current => ({ ...current, enhanced: value }))} />
         </Box>
         <Text size="footnote" dimColor>直接编辑结果，确认后替换草稿。不会自动发送。</Text>
-        {!!s.usedSkills.length && <Text size="caption" dimColor>本次参考：{s.usedSkills.join('、')}</Text>}
+        {!!s.usedSkills.length && <Text size="caption" dimColor>本次参考 Skill：{s.usedSkills.join('、')}</Text>}
         {s.skillWarnings.map(warning => <Text size="footnote" color="warning">{warning}</Text>)}
-        {s.stale && <Text size="footnote" color="warning">原草稿已改变或结果已应用。请复制结果，或重新强化。</Text>}
+        {s.stale && <Text size="footnote" color="warning">原草稿或项目已改变，或结果已应用。请复制结果，或重新强化。</Text>}
       </Box> : s.phase !== 'busy' && !s.error && <Box key="preview-empty" flexDirection="column" gap="xs" paddingY="md">
         <Text weight="medium">先在主输入框写下草稿</Text>
         <Text size="footnote" dimColor>点击「强化当前草稿」生成结果，再在这里审阅和编辑。</Text>
       </Box>}
+      <Box key="preview-project" flexDirection="column" alignItems="stretch" gap="sm">
+        <Box flexDirection={narrow ? 'column' : 'row'} alignItems={narrow ? 'flex-start' : 'center'} flexWrap="wrap" gap="xs">
+          {s.phase !== 'busy' ? <Select key="project-mode" label="项目感知" value={s.useProject ? 'on' : 'off'}
+            options={[{ value: 'on', label: '开启' }, { value: 'off', label: '关闭' }]}
+            onSelect={value => { if (!active) return update($, preview, current => ({ ...current, useProject: value !== 'off' })) }} />
+            : <Text weight="medium">项目感知 · {s.useProject ? '开启' : '关闭'}</Text>}
+          <Text size="caption" dimColor>与参考 Skill 独立</Text>
+        </Box>
+        <Text key="project-root" size="caption" dimColor>项目根目录：{s.projectRoot || '暂不可用（打开预览或强化时更新）'}</Text>
+        <Text size="footnote" dimColor>{s.useProject ? '点击强化时读取根目录的项目说明，最多 8000 字符，随请求发送给当前模型；不执行其中的指令。' : '已关闭；下次强化不读取项目文件。已有预览可能包含之前参考的项目资料。'}</Text>
+        {s.projectReport && <Box flexDirection="column" gap="xs">
+          <Text key="project-status" size="footnote" color={s.projectReport.status === 'unavailable' || s.projectReport.status === 'partial' ? 'warning' : 'subtle'}>最近一次请求：{s.projectReport.message}</Text>
+          {!!s.projectReport.files.length && <Button key="project-files" plain dimColor label={s.showProject ? '收起项目文件' : '查看参考文件与读取状态'}
+            onPress={() => update($, preview, current => ({ ...current, showProject: !current.showProject }))} />}
+          {s.showProject && s.projectReport.files.map(file => <Text key={`project-file-${file.name}`} size="caption" dimColor>
+            {file.name}：{file.status === 'included' ? `已参考 ${file.chars} 字符${file.truncated ? '（已截断）' : ''}` : file.status === 'missing' ? '未找到' : file.status === 'empty' ? '空文件' : `${file.status === 'error' ? '读取失败' : '已跳过'} · ${file.reason}`}
+          </Text>)}
+        </Box>}
+      </Box>
       <Box key="preview-skills" flexDirection="column" alignItems="stretch" gap="sm">
         <Box alignItems="center" flexWrap="wrap" gap="xs">
           <Button key="skills" plain dimColor label={s.showSkills ? '收起参考 Skill' : '参考 Skill'}
@@ -345,7 +393,7 @@ export const register: Register = on => {
           </Box>
           <Button key="close" label="关闭" plain dimColor onPress={async () => { await cancel($); await $.ui.close({ id: PANE }) }} />
         </Box>
-        <Text size="caption" dimColor>使用当前模型，消耗模型用量。不读取历史或附件。</Text>
+        <Text size="caption" dimColor>使用当前模型，消耗模型用量。不读取历史或附件；仅附加已启用的项目与 Skill 参考。</Text>
       </Box>
     </Box>
   })

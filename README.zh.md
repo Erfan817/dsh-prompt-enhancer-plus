@@ -14,7 +14,7 @@
 
 - **机器可解析骨架**：输出 `Task:`、`Requirements:`、`Acceptance criteria:`、`Constraints:`，详细档再加 `Context:` / `Failure cases:`；纯文本，不是 Markdown 或 JSON。
 - **三档详细度**：`简洁` 只润色，`标准` 适度补充结构（默认），`详细` 展开边界与验收标准。
-- **项目感知（DSH）**：读取会话工作区里的 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md` 和 `package.json` 作为参考数据。
+- **项目感知（DSH / Claude Code 原生版）**：读取会话项目里的 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md` 和 `package.json` 作为参考数据。Claude Code 原生版提供独立开关、项目根目录和文件读取状态。
 - **可复用人格**：保存产品、工程、写作、极简等“怎么改写”的方向。
 - **可编辑预览**：替换草稿前可全文审阅和修改；提供五条最近记录与十秒撤销。
 - **跨 harness**：DSH 原生按钮、Claude Code 原生插件（桌面版与终端）、Codex 桌面编辑面板、VS Code/Cursor 面板、Windows 全局热键和 CLI 共用规则。
@@ -59,7 +59,7 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 
 推荐原生 [`claude-code/native-plugin`](claude-code/native-plugin/README.md)：输入区上方按钮 → 可编辑预览 → 确认替换，不自动发送。使用宿主当前模型和凭据，不依赖桌面伴侣、HTTP 服务或额外 API Key，但仍消耗模型用量。桌面版会话可使用宿主插件安装流程；开发时也可在启动前设置 `CLAUDE_CODE_PLUGIN_DIRS` 指向插件目录并完整重启桌面应用。需要支持 function hooks 的构建，详见 [Claude Code 指南](claude-code/README.md)。
 
-原生插件 0.2.0 增加本机文字编辑 Skill 的自动匹配/手选，以及「再次强化预览」。参考内容会发送给当前模型，不执行 Skill 脚本；失败或取消保留预览，原草稿变化后不可覆盖。
+原生插件支持本机文字编辑 Skill 的自动匹配/手选，以及「再次强化预览」。0.3.0 补齐独立的「项目感知」开关，默认开启：只在点击强化时读取当前项目根目录的五类说明文件，每文件最多 6000 字符、总计最多 8000 字符，并显示参考来源、截断与读取状态。项目与 Skill 参考会发送给当前模型，不执行其中的指令；失败或取消保留预览，原草稿或项目变化后不可覆盖。
 
 旧 `/enhance` 命令和可选 `UserPromptSubmit` hook 保留兼容，仍依赖本机服务；传统 hook 只能追加上下文，不能替换原文。
 
@@ -129,7 +129,7 @@ POST /api/health    → { ready: true, version }
 
 ### 项目感知
 
-DSH Host 按顺序读取 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md`、`package.json`，作为“仅参考数据”写入 system 提示词，不写入用户任务消息。每文件最多 6000 字符、总计最多 8000 字符；文件缺失或不可读时静默跳过。
+DSH Host 和 Claude Code 原生版按顺序读取 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md`、`package.json`，作为“仅参考数据”写入 system 提示词，不写入用户任务消息。每文件最多 6000 字符、总计最多 8000 字符。DSH 缺失或不可读时静默跳过；Claude Code 原生版只读取宿主项目根目录，显示每个文件的读取、缺失、截断或跳过状态，不向父目录搜索，不读取链接文件、凭据或超大文件。通用桌面窗口等旧适配器不因此自动获得项目读取能力。
 
 ### 隐私与边界
 

@@ -51,7 +51,7 @@
 | **三档详细度**<br>*Three detail levels* | `concise` 轻度润色，`standard` 补充适度结构（默认），`detailed` 展开边界、验收标准与失败情况。<br>*Choose light polishing, proportional structure (default), or expanded boundaries and acceptance criteria.* |
 | **先审阅，再使用**<br>*Review before use* | DSH 支持全文预览和编辑、最近五条记录与十秒撤销；由你决定复制或替换草稿。<br>*DSH provides an editable preview, five recent entries, and ten-second undo. You decide whether to copy or replace.* |
 | **可复用人格与偏好**<br>*Reusable personas & preferences* | 保存产品、工程、写作、极简等改写方向；DSH 还能从手动修改前后的差异中提议可复用偏好，审阅后才保存。<br>*Save rewriting directions and, in DSH, review preferences inferred from your manual edits before anything is stored.* |
-| **项目感知（DSH）**<br>*Project-aware (DSH)* | 可将 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md` 和 `package.json` 作为参考数据，让改写更贴合当前项目。<br>*Use project instruction and metadata files as reference data for more relevant rewrites.* |
+| **项目感知（DSH / Claude Code 原生版）**<br>*Project-aware (DSH / native Claude Code)* | 可将 `AGENTS.md`、`CLAUDE.md`、`README.md`、`README.zh.md` 和 `package.json` 作为参考数据，让改写更贴合当前项目。Claude Code 原生版提供独立开关、项目根目录和文件读取状态。<br>*Use project instruction and metadata files as reference data. Native Claude Code also shows a separate toggle, project root and per-file status.* |
 | **一个核心，多个入口**<br>*One core, many entry points* | DSH 和 Claude Code 原生插件复用强化核心及各自宿主的模型接口；Codex 插件把共享规则交给当前对话模型；旧适配器连接本机服务，规则集中维护。<br>*DSH and native Claude Code use shared rules with host model clients; the Codex plugin hands shared rules to the conversation model; legacy adapters use the local service.* |
 
 ## 看看输出长什么样 · Example
@@ -149,7 +149,9 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 
 支持从常见本机 Skill 目录发现文字编辑类参考，自动匹配或手选最多三个；可直接对当前预览连续强化，失败和取消保留文本。关闭参考后不加载正文；不执行 Skill 脚本，参考内容会发送至当前模型。详见[原生插件说明](claude-code/native-plugin/README.md)。
 
-*The native function-hooks plugin adds a composer-adjacent button, editable preview, local text-editing Skill references, preview iteration and guarded replacement. It uses the host model client, not a companion service. Model usage applies; Skill bodies are reference data, never executed.*
+0.3.0 补齐项目感知：默认开启，只在点击强化时读取当前项目根目录的五类说明文件，每文件最多 6000 字符、总计最多 8000 字符。面板显示根目录、参考文件、截断和读取状态；与 Skill 开关独立。切换项目后旧结果不可回填。不扫描父目录或任意文件，不执行项目说明中的指令。
+
+*The native function-hooks plugin adds a composer-adjacent button, editable preview, bounded project context, local text-editing Skill references, preview iteration and guarded replacement. Project awareness is independently switchable, shows the host project root and per-file status, and reads up to 6000 characters per file / 8000 total only on enhancement. It uses the host model client, not a companion service. Model usage applies; reference data is never executed.*
 
 需要支持 `hooks.modules`、`AbovePrompt`、草稿读写及模型 completion 的 early-access 构建；不是所有 Claude Code 版本都保证兼容。桌面版会话可使用宿主的插件安装流程；开发时也可以在启动桌面应用前设置 `CLAUDE_CODE_PLUGIN_DIRS` 指向 `claude-code/native-plugin`（Windows 多个路径用分号分隔），然后完整重启桌面应用。开发加载和验证见 [Claude Code 指南](claude-code/README.md)。
 
@@ -237,6 +239,10 @@ DSH Host 按顺序读取 `AGENTS.md` → `CLAUDE.md` → `README.md` → `README
 | 总上限 · Total limit | 8000 字符 · characters |
 | 文件缺失或不可读 · Missing/unreadable files | 静默降级为无上下文 · Silently continue without context |
 | 开关 · Toggle | 预览面板「项目感知」/ `useProject` 工具参数 · Preview toggle / tool argument |
+
+Claude Code 原生版也支持同样的五类文件和字符限额；只读取宿主当前项目根目录，提供独立开关、目录显示及逐文件状态，缺失或不可读时可继续强化，不扫描父目录或任意文件。通用桌面窗口、VS Code 等旧适配器没有自动项目读取入口。
+
+*Native Claude Code supports the same five file names and character budgets, scoped to the host project root, with a separate toggle and per-file status. Legacy desktop and VS Code adapters do not automatically collect project files.*
 
 ### Skill 感知（DSH） · Skill references
 
