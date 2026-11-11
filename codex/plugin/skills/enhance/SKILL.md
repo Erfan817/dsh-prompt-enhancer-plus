@@ -6,8 +6,9 @@ description: "Open the Prompt Spark desktop editor or rewrite/refine an AI promp
 # Prompt Spark
 
 Turn the supplied draft into a directly usable prompt, with an editable desktop
-preview. Use the current conversation model; no separate model API is needed.
-The bundled local MCP server supplies the UI, not model inference.
+preview. The desktop panel uses an isolated local Codex backend with the user's
+existing login and configured model. A direct request in this chat can still use
+the current conversation model and `render_preview`.
 
 ## Desktop entry and preview
 
@@ -19,8 +20,11 @@ that the editable preview is ready, without repeating its full text. If the user
 explicitly requests text only, or the tool is unavailable, return the rewrite
 as text instead and don't claim the panel was displayed.
 
-The UI can send an explicit enhancement request into this conversation and
-append a reviewed preview to the composer with `send: false` when supported.
+The UI calls `enhance_prompt` directly and updates the same panel. It does not
+send an enhancement request into this conversation. Its entrypoints let users
+open the panel from the host UI without first sending a chat message, where the
+host supports them. The UI can append a reviewed preview to the composer with
+`send: false` when supported.
 It cannot read the unsent composer draft or replace existing composer content.
 Inserting the result is a user button action, never an automatic tool side effect.
 
@@ -73,5 +77,7 @@ This workflow ends at the preview. Do not perform the draft's task, edit project
 files, save preferences, change the composer, send another message, or copy to
 the clipboard as a side effect. A later user request to carry out the reviewed
 task is a new execution request; do not keep applying the rewrite-only workflow
-to that request. This skill runs in the host conversation, so it does not provide
-an isolated, history-free model session.
+to that request. Direct rewrites requested in this chat use its existing
+history. Panel rewrites use a separate ephemeral session without chat history;
+they do not automatically read project files or inherit this conversation's
+Skill selection.

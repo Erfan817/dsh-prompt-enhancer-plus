@@ -61,6 +61,7 @@
     "claude-code/**",
     "codex/plugin/**",
     "codex/build-plugin.mjs",
+    "codex/test-backend.mjs",
     "codex/test-plugin.mjs",
     "codex/test-desktop.mjs",
     "codex/test-overlay.mjs",
@@ -86,10 +87,10 @@
     "zod": "^4.4.3"
   },
   "scripts": {
-    "test": "node test-core.mjs && node test-host.mjs && node test-personas.mjs && node test-preferences.mjs && node test-client.mjs && node test-features.mjs && node test-skills.mjs && node desktop/test-desktop.mjs && node desktop/test-main.mjs && node desktop/test-runtime.cjs && node desktop/test-server.mjs && node vscode-extension/test-client.mjs && node hotkey-tool/test-cli.mjs && node codex/test-plugin.mjs && node codex/test-desktop.mjs && node codex/test-overlay.mjs",
+    "test": "node test-core.mjs && node test-host.mjs && node test-personas.mjs && node test-preferences.mjs && node test-client.mjs && node test-features.mjs && node test-skills.mjs && node desktop/test-desktop.mjs && node desktop/test-main.mjs && node desktop/test-runtime.cjs && node desktop/test-server.mjs && node vscode-extension/test-client.mjs && node hotkey-tool/test-cli.mjs && node codex/test-plugin.mjs && node codex/test-desktop.mjs && node codex/test-backend.mjs && node codex/test-overlay.mjs",
     "ci:package": "node scripts/check-package.mjs",
     "codex:build": "node codex/build-plugin.mjs",
-    "codex:validate": "node codex/test-plugin.mjs && node codex/test-desktop.mjs && node codex/test-overlay.mjs",
+    "codex:validate": "node codex/test-plugin.mjs && node codex/test-desktop.mjs && node codex/test-backend.mjs && node codex/test-overlay.mjs",
     "codex:overlay": "pwsh -NoProfile -File codex/overlay/launch.ps1",
     "claude:build": "node claude-code/build-native.mjs",
     "claude:validate": "node claude-code/build-native.mjs --check && claude plugin validate claude-code/native-plugin",

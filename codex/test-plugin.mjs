@@ -39,6 +39,8 @@ assert.deepEqual(legacyMcp.mcpServers, mcp.mcpServers);
 assert.equal(mcp.mcpServers.prompt_spark.type, 'stdio');
 assert.equal(mcp.mcpServers.prompt_spark.args[0], '${PLUGIN_ROOT}/server.mjs');
 await contained(plugin, './server.mjs');
+await contained(plugin, './backend.mjs');
+await contained(plugin, './prompt-core.js');
 await contained(plugin, './ui/editor.html');
 for (const key of ['composerIcon', 'logo']) await contained(plugin, legacy.interface[key]);
 

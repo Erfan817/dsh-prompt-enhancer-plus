@@ -35,7 +35,7 @@
 
 #### 桌面伴侣
 
-旧 VS Code/Cursor、CLI、热键及 `/enhance` 入口需要本机服务；DSH 和 Claude Code 原生插件不需要。保持终端运行；用窗口里的「退出」或 `Ctrl+C` 关闭。
+旧 VS Code/Cursor、CLI、热键及 `/enhance` 入口需要本机服务；DSH、Claude Code 原生插件和 Codex 独立面板不需要。保持终端运行；用窗口里的「退出」或 `Ctrl+C` 关闭。
 
 ```sh
 npm install --ignore-scripts
@@ -65,9 +65,9 @@ cursor --install-extension prompt-spark-vscode-1.0.0.vsix
 
 #### Codex
 
-可安装的 [`codex/plugin`](codex/README.md) 提供桌面编辑面板和三档强化。打开本仓库项目并完整重启桌面应用，在 **Plugins / 插件 → Prompt Spark 本地来源** 安装，新建对话后输入“打开 Prompt Spark 提示词编辑面板”。需要 Node.js 22+，无需安装 Codex CLI、手动启动桌面伴侣或额外 API Key。
+可安装的 [`codex/plugin`](codex/README.md) 提供原生独立侧边面板和三档强化。打开本仓库项目并按本地插件流程完整重启，在 **Plugins / 插件 → Prompt Spark 本地来源** 安装，随后点击对话右上角**新建标签页 → 更多工具 → 打开 Prompt Spark**。无需先发送聊天消息。需要 Node.js 22+ 和已配置可用模型的 Codex；Windows 自动寻找桌面组件，无需另装 CLI、启动桌面伴侣或额外填写 API Key。
 
-面板支持编辑草稿、三档选择、可编辑预览、再次强化、复制和放入输入框。点击强化会明确发送一次改写请求；放入输入框只追加结果，不发送、不覆盖已有草稿。支持指定项目资料和 Skill 参考，遵循当前对话的上下文和存储策略。实际桌面端到端验收范围见 [Codex 指南](codex/README.md)。
+强化通过本机 Codex 后端的独立临时会话完成，结果返回当前面板，不向当前聊天发请求。支持再次强化当前预览、取消、复制和确认后放入输入框。后台使用 Codex 已有配置的默认模型，不自动跟随聊天临时选择的型号，也不自动读取聊天历史、项目或 Skill；草稿仍会发送至已配置的模型服务并消耗用量。宿主支持时可追加到输入框，不发送、不读取或替换已有草稿；不支持时保留复制方式。插件 `0.3.2` 已在桌面版 `26.1106.6628.0` 实测完成原生入口、真实模型强化、同面板结果和点击插入输入框；结果未发送，测试后已恢复输入框，详见 [Codex 指南](codex/README.md)。
 
 #### 任意软件（Windows）
 
@@ -150,7 +150,7 @@ npm run desktop:smoke
 npm pack --dry-run
 ```
 
-`npm test` 运行十四套无需 Electron、无需真实模型的测试：核心、Host、人格、偏好、Client、项目上下文与等级、桌面 UI、桌面服务 API 与安全、VS Code 客户端、CLI，以及 Codex 插件包、MCP 传输、模拟宿主面板交互和 Windows 悬浮组件状态。
+`npm test` 无需 Electron，也不调用真实模型，覆盖核心、Host、人格、偏好、Client、项目上下文与等级、桌面 UI、桌面服务 API 与安全、VS Code 客户端、CLI，以及 Codex 插件包、MCP 传输、模拟宿主面板交互、独立后端和 Windows 悬浮组件状态。
 
 ### 许可证
 
