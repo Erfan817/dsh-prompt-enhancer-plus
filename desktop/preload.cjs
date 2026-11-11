@@ -9,6 +9,12 @@ async function invoke(channel, payload) {
 contextBridge.exposeInMainWorld('promptEnhancer', {
   initialize: () => invoke('enhancer:init'),
   saveSettings: (settings) => invoke('enhancer:settings', settings),
+  changeShortcut: (shortcut) => invoke('enhancer:shortcut', shortcut),
+  onShellState: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('enhancer:shell-state', listener);
+    return () => ipcRenderer.removeListener('enhancer:shell-state', listener);
+  },
   generate: (request) => invoke('enhancer:generate', request),
   cancel: () => invoke('enhancer:cancel'),
   copy: (text) => invoke('enhancer:copy', text),

@@ -1,6 +1,7 @@
 const api = window.promptEnhancer;
 const elements = Object.fromEntries([...document.querySelectorAll('[id]')].map((element) => [element.id, element]));
 let settings;
+let shellState;
 let runtime = 'electron';
 let serviceStopped = false;
 let busy = false;
@@ -41,17 +42,51 @@ function populateSettings() {
   elements.model.value = settings.model;
   elements.apiKey.value = '';
   elements.forgetKey.checked = false;
-  elements.rememberKey.checked = settings.rememberKey && settings.canRememberKey;
+  elements.rememberKey.checked = settings.rememberKey;
   elements.rememberKey.disabled = !settings.canRememberKey;
   elements.savedDirection.value = elements.direction.value;
   elements.keyHint.textContent = settings.keyWarning || (settings.keyPresent ? '已配置 Key；不会把已保存的 Key 返回到此输入框。' : '尚未配置 Key。远程 API 通常需要 Key，本地模型可留空。');
+  if (runtime === 'electron') {
+    elements.shortcut.value = shellState?.shortcut || '';
+    elements.shortcut.disabled = false;
+    elements.shortcut.placeholder = '例如 Control+Shift+Space；留空停用';
+  } else {
+    elements.shortcut.value = '';
+    elements.shortcut.disabled = true;
+  }
+  if (settings.keyUnusable && !elements.keyHint.textContent.includes('原密文已保留')) elements.keyHint.textContent += ' 已保存的 Key 当前不可用；原密文保留，可重新输入或勾选清除。';
   if (!settings.canRememberKey) elements.keyHint.textContent += ' 系统安全存储不可用，Key 只在本次运行内存中保留。';
+  populateRecovery();
+  elements.shortcutStatus.textContent = '';
   elements.settingsStatus.textContent = '';
+}
+
+function populateRecovery() {
+  const recovery = settings.recovery || {};
+  elements.recovery.hidden = !recovery.recoverable;
+  elements.confirmRecovery.checked = false;
+  elements.confirmRecovery.disabled = !recovery.recoverable;
+  if (!recovery.recoverable) { elements.recoveryHint.textContent = ''; return; }
+  if (recovery.losesUnknownData) {
+    elements.recoveryHint.textContent = '原设置由更新版本的 Prompt Spark 保存，无法在当前版本完整读取。确认重建会用上方表单覆盖它，兼容版本才能理解的字段可能丢失；开始前会先备份原文件到同目录的唯一副本。';
+  } else {
+    elements.recoveryHint.textContent = '原设置文件已损坏或无法读取，已保留原文件。确认重建会用上方表单内容重写设置，并在开始前把原文件备份到同目录的唯一副本。';
+  }
 }
 
 function updateConnectionHint() {
   const hostname = new URL(settings.baseUrl).host;
   elements.connectionHint.textContent = `${settings.model} · ${hostname} · 仅点击生成时发送内容`;
+}
+
+function applyShellState(state) {
+  if (runtime !== 'electron' || !state) return;
+  shellState = state;
+  if (elements.shortcut) elements.shortcut.value = state.shortcut;
+  elements.shortcutHint.textContent = state.shortcutAvailable
+    ? `唤出：${state.shortcut} · Ctrl / Cmd + Enter 强化${state.trayAvailable ? ' · 托盘可用' : ''}`
+    : state.trayAvailable ? '快捷键停用或不可用 · 可从托盘打开' : '快捷键不可用 · 可从任务栏打开';
+  if (state.warning) setStatus(state.warning, true);
 }
 
 async function cancelGeneration() {
@@ -107,23 +142,42 @@ elements.result.addEventListener('input', () => { autosize(elements.result); upd
 elements.persona.addEventListener('change', updateDirection);
 elements.direction.addEventListener('input', () => autosize(elements.direction));
 elements.settings.addEventListener('click', () => { populateSettings(); elements.settingsDialog.showModal(); });
+elements.saveShortcut.addEventListener('click', async () => {
+  if (runtime !== 'electron') return;
+  elements.saveShortcut.disabled = true;
+  try {
+    const state = await api.changeShortcut(elements.shortcut.value);
+    applyShellState(state);
+    elements.shortcutStatus.textContent = '快捷键已保存。';
+  } catch (error) { elements.shortcutStatus.textContent = error.message; }
+  finally { elements.saveShortcut.disabled = false; }
+});
 elements.closeSettings.addEventListener('click', () => elements.settingsDialog.close());
 elements.settingsDialog.addEventListener('close', () => { elements.apiKey.value = ''; });
 elements.settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  // Reset may only be sent when the user explicitly confirmed it in the visible
+  // recovery section; no implicit reset is ever attached to a normal save.
+  const recoveryActive = Boolean(settings.recovery && settings.recovery.recoverable);
+  const reset = recoveryActive && elements.confirmRecovery.checked === true;
+  if (recoveryActive && !reset) {
+    elements.settingsStatus.textContent = '原设置文件受保护。请先勾选“我已了解”确认以当前内容重建，否则不会覆盖原文件。';
+    return;
+  }
   elements.saveSettings.disabled = true;
-  elements.settingsStatus.textContent = '正在保存…';
+  elements.settingsStatus.textContent = reset ? '正在重建设置…' : '正在保存…';
   try {
     settings = await api.saveSettings({
       provider: elements.provider.value, baseUrl: elements.baseUrl.value, model: elements.model.value,
       apiKey: elements.apiKey.value, rememberKey: elements.rememberKey.checked, forgetKey: elements.forgetKey.checked,
       personaId: elements.persona.value, direction: elements.savedDirection.value,
+      ...(reset ? { reset: true } : {}),
     });
     elements.direction.value = settings.direction;
     updateConnectionHint();
     elements.apiKey.value = '';
     elements.settingsDialog.close();
-    setStatus('设置已保存。只有点击“强化提示词”才会调用模型。');
+    setStatus(settings.recovered ? '设置已重建，原文件已安全备份。只有点击“强化提示词”才会调用模型。' : '设置已保存。只有点击“强化提示词”才会调用模型。');
   } catch (error) { elements.settingsStatus.textContent = error.message; }
   finally { elements.saveSettings.disabled = false; }
 });
@@ -169,7 +223,8 @@ const removeHiddenListener = api.onHidden(() => {
   updateActions();
   setStatus('窗口已隐藏，本次生成已取消；已有文字保留。');
 });
-window.addEventListener('beforeunload', () => { removeHiddenListener(); cancelAnimationFrame(resizeFrame); });
+const removeShellStateListener = api.onShellState?.(applyShellState) || (() => {});
+window.addEventListener('beforeunload', () => { removeHiddenListener(); removeShellStateListener(); cancelAnimationFrame(resizeFrame); });
 
 async function initialize() {
   try {
@@ -187,8 +242,10 @@ async function initialize() {
     elements.persona.value = settings.personaId;
     if (!elements.persona.value) elements.persona.value = 'builtin:balanced';
     elements.direction.value = settings.direction;
-    elements.shortcutHint.textContent = runtime === 'browser' ? '本机窗口 · Ctrl / Cmd + Enter 强化 · 复制到任意 Agent 使用'
-      : initial.shortcutAvailable ? 'Ctrl / Cmd + Shift + Space 唤出 · Ctrl / Cmd + Enter 强化' : '快捷键被占用；关闭会最小化，可从任务栏重新打开。';
+    if (runtime === 'browser') elements.shortcutHint.textContent = '本机窗口 · Ctrl / Cmd + Enter 强化 · 复制到任意 Agent 使用';
+    else applyShellState(initial);
+    elements.shortcut.disabled = runtime === 'browser';
+    elements.shortcutSection.hidden = runtime === 'browser';
     updateDirection();
     updateConnectionHint();
     updateActions();
