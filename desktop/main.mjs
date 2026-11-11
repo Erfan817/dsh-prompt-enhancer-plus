@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, screen, Tray } from 'electron';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -15,7 +16,7 @@ const pageUrl = pathToFileURL(pagePath).href;
 const smokeTest = process.argv.includes('--smoke-test');
 let smokeDirectory = null;
 if (smokeTest) {
-  smokeDirectory = await mkdtemp(path.join(tmpdir(), 'prompt-enhancer-smoke-'));
+  smokeDirectory = mkdtempSync(path.join(tmpdir(), 'prompt-enhancer-smoke-'));
   app.setPath('userData', smokeDirectory);
 }
 // Keep the existing application identity and userData location.
@@ -237,7 +238,7 @@ async function start() {
 }
 
 if (!ownsLock) {
-  if (smokeDirectory) await rm(smokeDirectory, { recursive: true, force: true });
+  if (smokeDirectory) void rm(smokeDirectory, { recursive: true, force: true });
   app.quit();
 } else {
   app.on('second-instance', showWindow);
@@ -266,10 +267,10 @@ if (!ownsLock) {
   });
   app.on('will-quit', () => { globalShortcut.unregisterAll(); tray?.destroy(); });
   app.on('window-all-closed', quit);
-  await app.whenReady();
-  try { await start(); }
-  catch {
+  // Electron waits for the ESM entry to finish evaluating before emitting ready.
+  // A top-level await of whenReady() would deadlock this startup sequence.
+  void app.whenReady().then(start).catch(async () => {
     if (smokeTest) await completeSmoke(1);
     else { dialog.showErrorBox('Prompt Spark 启动失败', '桌面助手未能启动，请检查安装和配置文件权限。'); quit(); }
-  }
+  });
 }
