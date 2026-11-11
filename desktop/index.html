@@ -62,7 +62,17 @@
       <p id="keyHint" class="help"></p>
       <p class="help">切换 API 地址或接口类型后，请重新输入该服务的 Key，避免把旧 Key 发给新服务。本地模型支持 localhost HTTP，远程地址必须 HTTPS。</p>
       <label class="field" for="savedDirection">我的自定义强化方向<textarea id="savedDirection" rows="3" maxlength="4000"></textarea></label>
-      <p id="runtimeHint" class="help">只保存模型配置和你明确填写的强化方向，不保存任务历史。默认快捷键 Ctrl / Cmd + Shift + Space；关闭窗口后仍可唤出，真正退出请点“退出”。</p>
+      <section id="shortcutSection" hidden aria-label="桌面快捷键">
+        <label class="field" for="shortcut">唤出快捷键<input id="shortcut" maxlength="100" placeholder="例如 Control+Shift+Space；留空停用"><span class="help">快捷键单独保存，不改变模型设置。冲突时原快捷键保持不变。没有托盘或快捷键时，关闭会最小化到任务栏。</span></label>
+        <button id="saveShortcut" type="button" class="secondary">保存快捷键</button>
+        <p id="shortcutStatus" class="help" role="status" aria-live="polite"></p>
+      </section>
+      <p id="runtimeHint" class="help">只保存模型配置和你明确填写的强化方向，不保存任务历史。关闭窗口会收起到托盘；真正退出请使用托盘菜单或窗口内的“退出”。</p>
+      <section id="recovery" class="recovery" hidden aria-labelledby="recoveryTitle" style="margin-top:18px;padding:14px 16px;border:1px solid #bd3f45;border-radius:10px;background:rgba(189,63,69,0.08)">
+        <h3 id="recoveryTitle" style="font-size:13px;margin-bottom:8px;color:#bd3f45">设置文件需要恢复</h3>
+        <p id="recoveryHint" class="help"></p>
+        <label class="check"><input id="confirmRecovery" type="checkbox"> 我已了解：将先用上方表单内容重建设置，原文件会先备份到同目录的唯一副本。</label>
+      </section>
       <p id="settingsStatus" class="message" role="status" aria-live="polite"></p>
       <div class="dialog-actions"><button id="saveSettings" type="submit" class="primary">保存设置</button></div>
     </form>
